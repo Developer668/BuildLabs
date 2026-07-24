@@ -108,8 +108,8 @@ textarea:focus-visible {
   flex-direction: column;
   align-items: center;
   min-height: 0;
-  background: #f2f3f5;
-  border-right: 1px solid #d5d8dd;
+  background: #15171b;
+  border-right: 1px solid #292e35;
 }
 
 .brand-mark {
@@ -121,13 +121,15 @@ textarea:focus-visible {
 
 .brand-mark img {
   display: block;
-  width: 42px;
-  height: 42px;
+  width: 36px;
+  height: 36px;
   padding: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
   box-shadow: none;
+  filter: drop-shadow(0 0 1px rgb(255 255 255 / 48%))
+    drop-shadow(0 4px 8px rgb(0 0 0 / 35%));
   object-fit: contain;
 }
 
@@ -167,17 +169,17 @@ textarea:focus-visible {
 }
 
 .icon-rail .rail-button {
-  color: #59616c;
+  color: #858c96;
 }
 
 .rail-button:hover {
-  background: rgb(17 20 24 / 7%);
-  color: #111418;
+  background: rgb(255 255 255 / 6%);
+  color: #f0f2f5;
 }
 
 .rail-button.active {
-  background: rgb(75 111 255 / 14%);
-  color: #3157e0;
+  background: rgb(75 111 255 / 17%);
+  color: #8da2ff;
 }
 
 .rail-button.active::before {
@@ -208,8 +210,8 @@ textarea:focus-visible {
   margin-top: 3px;
   place-items: center;
   border-radius: 7px;
-  background: #dde1e6;
-  color: #343a42;
+  background: #25292f;
+  color: #c1c6cd;
   cursor: pointer;
   font-size: 11px;
   font-weight: 650;
@@ -220,8 +222,8 @@ textarea:focus-visible {
 
 .avatar:hover,
 .avatar[aria-expanded="true"] {
-  background: #cfd4da;
-  color: #111418;
+  background: #30353d;
+  color: #f2f4f7;
 }
 
 .avatar.static {
@@ -229,8 +231,8 @@ textarea:focus-visible {
 }
 
 .avatar.static:hover {
-  background: #dde1e6;
-  color: #343a42;
+  background: #25292f;
+  color: #c1c6cd;
 }
 
 .topbar {
