@@ -33,6 +33,20 @@ Most AI builders optimize for a fast first draft. BuildLabs optimizes for
 > [`PRODUCT_SPEC.md`](./PRODUCT_SPEC.md). Guardrails and real commands:
 > [`AGENTS.md`](./AGENTS.md).
 
+## Operator Studio frontend
+
+The repository now includes a responsive React operator Studio at `/studio/`.
+It provides focus, two-up, and four-up candidate monitors; operator-only raw
+preview support; activity, contract, proof, diff, and tree inspection; a
+four-candidate filmstrip; connection settings; and an admin-review draft flow
+that never auto-applies instructions to the swarm. It uses authenticated REST
+polling and does not depend on a CopilotKit UI or AG-UI frontend client.
+
+- UI and interaction reference:
+  [`STUDIO_FRONTEND_GUIDE.md`](./STUDIO_FRONTEND_GUIDE.md)
+- Local development, production build, endpoints, and troubleshooting:
+  [`STUDIO_OPERATIONS.md`](./STUDIO_OPERATIONS.md)
+
 ## Core commitments
 
 - **Anything the caller wants** — marketing sites, lead-gen sites, or full web

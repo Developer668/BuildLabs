@@ -214,6 +214,29 @@ export class SqliteRunStore implements RunStore {
     );
   }
 
+  listRecent(limit: number, projectId?: string): BuildRun[] {
+    const safeLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+    const rows = (
+      projectId
+        ? this.#database
+            .prepare(
+              `SELECT * FROM build_runs
+               WHERE project_id = ?
+               ORDER BY updated_at DESC, id
+               LIMIT ?`,
+            )
+            .all(projectId, safeLimit)
+        : this.#database
+            .prepare(
+              `SELECT * FROM build_runs
+               ORDER BY updated_at DESC, id
+               LIMIT ?`,
+            )
+            .all(safeLimit)
+    ) as Row[];
+    return rows.map((row) => this.#rowToRun(row));
+  }
+
   listQueued(limit: number): BuildRun[] {
     const safeLimit = Math.max(1, Math.min(1_000, Math.floor(limit)));
     const rows = this.#database

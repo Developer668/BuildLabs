@@ -1,6 +1,8 @@
-import { createReadStream } from "node:fs";
+import { createReadStream, existsSync } from "node:fs";
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { resolve } from "node:path";
 
+import fastifyStatic from "@fastify/static";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { z, ZodError } from "zod";
 
@@ -56,6 +58,12 @@ const CustomerObservabilityQuerySchema = z
   .object({
     after: z.coerce.number().int().nonnegative().default(0),
     limit: z.coerce.number().int().min(1).max(250).default(100),
+  })
+  .strict();
+const StudioRunsQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(100).default(24),
+    projectId: z.string().min(1).max(128).optional(),
   })
   .strict();
 const OutboxQuerySchema = z.object({
@@ -272,6 +280,8 @@ export function createHttpServer(
     if (
       request.url === "/health" ||
       request.url === "/ready" ||
+      request.url === "/studio" ||
+      request.url.startsWith("/studio/") ||
       !dependencies.config.BUILDLABS_INTERNAL_TOKEN
     ) {
       return;
@@ -300,6 +310,74 @@ export function createHttpServer(
       status: ready ? "ready" : "not_ready",
       providers,
     } satisfies SponsorStatusPayload);
+  });
+
+  registerStudioShell(server);
+
+  server.get("/v1/studio/runs", (request) => {
+    const { limit, projectId } = StudioRunsQuerySchema.parse(request.query);
+    const runs = dependencies.store.listRecent(limit, projectId).map((run) => {
+      const assignment = dependencies.store.getAssignment(run.id);
+      const evidence = dependencies.store.listEvidence(run.id);
+      const events = dependencies.store.listEvents(run.id, 0);
+      const hardRequirements =
+        assignment?.contract.requirements.filter(
+          (requirement) => requirement.priority === "hard",
+        ).length ?? 0;
+      return {
+        run,
+        assignment: assignment
+          ? {
+              strategyLabel: assignment.strategyLabel,
+              requestedAt: assignment.requestedAt,
+              limits: assignment.limits,
+              contract: {
+                contractId: assignment.contract.contractId,
+                contractRevision: assignment.contract.contractRevision,
+                approvedAt: assignment.contract.approvedAt,
+                approvedFacts: assignment.contract.approvedFacts.map(
+                  (fact) => ({
+                    id: fact.id,
+                    statement: fact.statement,
+                  }),
+                ),
+                forbiddenClaims: assignment.contract.forbiddenClaims,
+                requirements: assignment.contract.requirements.map(
+                  (requirement) => ({
+                    id: requirement.id,
+                    description: requirement.description,
+                    priority: requirement.priority,
+                    verifierKinds: requirement.verifiers.map(
+                      (verifier) => verifier.kind,
+                    ),
+                  }),
+                ),
+              },
+            }
+          : null,
+        activity: {
+          eventCount: events.length,
+          latestEvent: events.at(-1) ?? null,
+        },
+        proof: {
+          total: evidence.length,
+          passed: evidence.filter((receipt) => receipt.status === "PASS")
+            .length,
+          failed: evidence.filter((receipt) => receipt.status === "FAIL")
+            .length,
+          errors: evidence.filter((receipt) => receipt.status === "ERROR")
+            .length,
+          hardRequirements,
+        },
+        artifactAvailable: dependencies.store.getArtifact(run.id) !== undefined,
+        previewAvailable:
+          run.sandboxId !== undefined && run.previewPort !== undefined,
+      };
+    });
+    return {
+      runs,
+      generatedAt: new Date().toISOString(),
+    };
   });
 
   server.post("/v1/integrations/probe", async (_request, reply) => {
@@ -1111,4 +1189,41 @@ function validFrozenPreviewTarget(
   } catch {
     return false;
   }
+}
+
+function registerStudioShell(server: FastifyInstance): void {
+  const studioRoot = resolve(process.cwd(), "dist", "studio");
+  const indexPath = resolve(studioRoot, "index.html");
+  if (!existsSync(indexPath)) {
+    return;
+  }
+
+  void server.register(fastifyStatic, {
+    root: studioRoot,
+    prefix: "/studio/",
+    decorateReply: false,
+    index: ["index.html"],
+  });
+  server.get("/studio", (_request, reply) => reply.redirect("/studio/"));
+  server.addHook("onSend", (request, reply, payload, done) => {
+    if (request.url === "/studio" || request.url.startsWith("/studio/")) {
+      void reply
+        .header("Cache-Control", "no-store")
+        .header("Cross-Origin-Opener-Policy", "same-origin")
+        .header("Referrer-Policy", "no-referrer")
+        .header("X-Content-Type-Options", "nosniff")
+        .header(
+          "Content-Security-Policy",
+          [
+            "default-src 'self'",
+            "connect-src 'self' http://127.0.0.1:* http://localhost:* https:",
+            "frame-src 'self' https:",
+            "img-src 'self' data: https:",
+            "script-src 'self'",
+            "style-src 'self' 'unsafe-inline'",
+          ].join("; "),
+        );
+    }
+    done(null, payload);
+  });
 }

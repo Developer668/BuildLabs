@@ -412,6 +412,7 @@ export interface RunStore {
   createRun(assignment: BuildAssignment): CreateRunResult;
   getRun(runId: string): BuildRun | undefined;
   getAssignment(runId: string): BuildAssignment | undefined;
+  listRecent(limit: number, projectId?: string): BuildRun[];
   listQueued(limit: number): BuildRun[];
   listEvents(runId: string, afterSequence: number, limit?: number): RunEvent[];
   getLatestEventSequence(runId: string): number;

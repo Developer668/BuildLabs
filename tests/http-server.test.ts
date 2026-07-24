@@ -217,6 +217,87 @@ describe("HTTP server", () => {
     });
   });
 
+  it("lists recent studio candidates without exposing transcript contents", async () => {
+    const first = assignment("studio-list-first");
+    const second = assignment("studio-list-second", (value) => {
+      value.projectId = "project-studio-second";
+      value.contract.projectId = "project-studio-second";
+      value.contract.contractId = "contract-studio-second-v1";
+    });
+    store.createRun(first);
+    const newest = store.createRun(second).run;
+
+    const unauthorized = await server.inject({
+      method: "GET",
+      url: "/v1/studio/runs",
+    });
+    expect(unauthorized.statusCode).toBe(401);
+
+    const response = await server.inject({
+      method: "GET",
+      url: "/v1/studio/runs?limit=1&projectId=project-studio-second",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{
+      runs: Array<{
+        run: {
+          id: string;
+          projectId: string;
+          candidateId: string;
+        };
+        assignment: {
+          strategyLabel: string;
+          contract: {
+            contractRevision: number;
+            requirements: Array<{
+              id: string;
+              description: string;
+              priority: string;
+              verifierKinds: string[];
+            }>;
+          };
+        };
+        activity: { eventCount: number };
+        proof: { total: number; hardRequirements: number };
+        artifactAvailable: boolean;
+        previewAvailable: boolean;
+      }>;
+    }>();
+    expect(body.runs).toHaveLength(1);
+    expect(body.runs[0]).toMatchObject({
+      run: {
+        id: newest.id,
+        projectId: "project-studio-second",
+        candidateId: "candidate-studio-list-second",
+      },
+      assignment: {
+        strategyLabel: "clear service-business website",
+        contract: {
+          contractRevision: 1,
+        },
+      },
+      activity: {
+        eventCount: 1,
+      },
+      proof: {
+        total: 0,
+        hardRequirements: 1,
+      },
+      artifactAvailable: false,
+      previewAvailable: false,
+    });
+    expect(body.runs[0]!.assignment.contract.requirements).toContainEqual({
+      id: "homepage",
+      description: "Homepage names Mission Peak Electric.",
+      priority: "hard",
+      verifierKinds: ["http"],
+    });
+    expect(response.body).not.toContain(
+      "Mission Peak Electric serves Fremont.",
+    );
+  });
+
   it("rejects malformed assignments before queueing them", async () => {
     const response = await server.inject({
       method: "POST",
