@@ -156,6 +156,12 @@ const ProviderIdempotencyKeySchema = z
   .min(1)
   .max(512)
   .regex(/^[A-Za-z0-9][A-Za-z0-9:._/-]*$/);
+const StudioDemoIntakeBodySchema = z
+  .object({
+    content: z.string().trim().min(10).max(20_000),
+    researchConsent: z.boolean().default(false),
+  })
+  .strict();
 
 export interface HttpServerDependencies {
   config: AppConfig;
@@ -286,6 +292,8 @@ export function createHttpServer(
       request.url === "/ready" ||
       request.url === "/studio" ||
       request.url.startsWith("/studio/") ||
+      request.url.startsWith("/v1/studio/") ||
+      request.url.startsWith("/v1/build-runs/") ||
       !dependencies.config.BUILDLABS_INTERNAL_TOKEN
     ) {
       return;
@@ -386,6 +394,53 @@ export function createHttpServer(
       runs,
       generatedAt: new Date().toISOString(),
     };
+  });
+
+  server.post("/v1/demo-intakes", async (request, reply) => {
+    const orchestrationToken =
+      dependencies.config.ORCHESTRATION_INTERNAL_TOKEN?.trim();
+    if (!orchestrationToken) {
+      return reply.code(503).send({
+        error: "integration_unconfigured",
+        message: "The text-demo orchestration bridge is not configured",
+      });
+    }
+    const body = StudioDemoIntakeBodySchema.parse(request.body);
+    const idempotencyKey = ProviderIdempotencyKeySchema.parse(
+      request.headers["idempotency-key"],
+    );
+    const sourceId = `studio-demo:${sha256(idempotencyKey).slice(0, 32)}`;
+    const endpoint = new URL(
+      "/v1/orchestration/intakes",
+      dependencies.config.BUILDLABS_ORCHESTRATION_URL,
+    );
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${orchestrationToken}`,
+        "content-type": "application/json",
+        "idempotency-key": sourceId,
+      },
+      body: JSON.stringify({
+        channel: "text",
+        intakeId: sourceId,
+        sourceId,
+        receivedAt: new Date().toISOString(),
+        content: body.content,
+        emailVerified: false,
+        researchConsent: body.researchConsent,
+        provider: "buildlabs_studio",
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) {
+      return reply.code(502).send({
+        error: "orchestration_unavailable",
+        message: `The orchestration intake returned ${response.status}`,
+      });
+    }
+    const accepted = (await response.json()) as unknown;
+    return reply.code(202).send(accepted);
   });
 
   server.post("/v1/integrations/probe", async (_request, reply) => {

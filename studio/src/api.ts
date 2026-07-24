@@ -85,6 +85,38 @@ export async function loadStudioSelection(
   };
 }
 
+export async function submitStudioDemoIntake(
+  connection: StudioConnection,
+  content: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const baseUrl = connection.baseUrl.trim().replace(/\/$/, "");
+  const headers = new Headers({
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    "Idempotency-Key": `studio-demo:${crypto.randomUUID()}`,
+  });
+  if (connection.token.trim()) {
+    headers.set("Authorization", `Bearer ${connection.token.trim()}`);
+  }
+  const response = await fetch(`${baseUrl}/v1/demo-intakes`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ content, researchConsent: false }),
+    ...(signal ? { signal } : {}),
+  });
+  if (!response.ok) {
+    let message = `Text demo failed with ${response.status}`;
+    try {
+      const payload = (await response.json()) as { message?: unknown };
+      if (typeof payload.message === "string") message = payload.message;
+    } catch {
+      // Preserve the bounded status message.
+    }
+    throw new StudioApiError(response.status, message);
+  }
+}
+
 async function request<T>(
   connection: StudioConnection,
   path: string,

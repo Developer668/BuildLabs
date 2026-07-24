@@ -3188,11 +3188,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       role: "frozen-preview",
       snapshot: request.snapshotId,
       ...(this.#target ? { target: this.#target } : {}),
-      snapshotResources: {
-        cpu: 2,
-        memoryGiB: 4,
-        diskGiB: 10,
-      },
+      snapshotResources: DAYTONA_PINNED_SNAPSHOT_INPUTS.resources,
       warmPoolEnabled: false,
     });
     const measurement = new DaytonaAcquisitionTimer(
@@ -3467,7 +3463,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       snapshot.disk !== DAYTONA_PINNED_SNAPSHOT_INPUTS.resources.diskGiB
     ) {
       throw new Error(
-        "The configured Daytona build snapshot is not active with the pinned 2 CPU, 4 GiB memory, and 10 GiB disk",
+        "The configured Daytona build snapshot is not active with the pinned daytona-large profile (4 CPU, 8 GiB memory, and 10 GiB disk)",
       );
     }
     const attestation = await this.#loadAttestation();
@@ -3857,11 +3853,9 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       role,
       snapshot,
       ...(this.#target ? { target: this.#target } : {}),
-      snapshotResources: attestation?.payload.snapshot.resources ?? {
-        cpu: 2,
-        memoryGiB: 4,
-        diskGiB: 10,
-      },
+      snapshotResources:
+        attestation?.payload.snapshot.resources ??
+        DAYTONA_PINNED_SNAPSHOT_INPUTS.resources,
       warmPoolEnabled:
         this.#warmPoolRoles.has(role) && attestation !== undefined,
     });

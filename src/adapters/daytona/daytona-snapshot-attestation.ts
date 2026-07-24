@@ -7,6 +7,7 @@ export const DAYTONA_SNAPSHOT_ATTESTATION_SCHEMA =
   "buildlabs.daytona.snapshot-attestation.v1";
 
 export const DAYTONA_PINNED_SNAPSHOT_INPUTS = {
+  sandboxClass: "daytona-large",
   baseImage: "docker:28.3.3-dind",
   alpinePackages: [
     "bash",
@@ -29,8 +30,8 @@ export const DAYTONA_PINNED_SNAPSHOT_INPUTS = {
   ],
   playwrightCoreVersion: "1.61.1",
   resources: {
-    cpu: 2,
-    memoryGiB: 4,
+    cpu: 4,
+    memoryGiB: 8,
     diskGiB: 10,
   },
 } as const;

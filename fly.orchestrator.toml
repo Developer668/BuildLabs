@@ -78,12 +78,12 @@ swap_size_mb = 512
   ORCHESTRATION_PREVIEW_REVIEW_PERIOD_MS = "86400000"
 
   FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1"
-  FIREWORKS_MODEL = "accounts/fireworks/models/glm-5p2"
+  FIREWORKS_MODEL = "accounts/fireworks/models/minimax-m3"
   BRAINTRUST_API_URL = "https://api.braintrust.dev"
   BRAINTRUST_APP_URL = "https://www.braintrust.dev"
   BRAINTRUST_PROJECT_NAME = "BuildLabs"
   STRIPE_PRODUCT_NAME = "BuildLabs software engagement"
-  DAYTONA_BUILD_SNAPSHOT = "buildlabs-dind-browser-v2"
+  DAYTONA_BUILD_SNAPSHOT = "buildlabs-dind-browser-large-v3"
 
   # Production refuses test-mode Stripe (src/orchestration/runtime/config.ts).
   STRIPE_EXPECTED_LIVEMODE = "true"

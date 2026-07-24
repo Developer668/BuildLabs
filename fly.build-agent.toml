@@ -70,7 +70,7 @@ swap_size_mb = 512
   BUILDLABS_LEASE_MILLISECONDS = "30000"
 
   DAYTONA_API_URL = "https://app.daytona.io/api"
-  DAYTONA_BUILD_SNAPSHOT = "buildlabs-dind-browser-v2"
+  DAYTONA_BUILD_SNAPSHOT = "buildlabs-dind-browser-large-v3"
 
   # The attestation is produced by `npm run provision:daytona` and lives on the
   # volume because it expires after seven days and must be refreshed without a
@@ -83,11 +83,11 @@ swap_size_mb = 512
   DAYTONA_OTEL_ENABLED = "false"
 
   FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1"
-  FIREWORKS_MODEL = "accounts/fireworks/models/glm-5p2"
-  FIREWORKS_BUILDER_MODEL = "accounts/fireworks/models/glm-5p2"
-  FIREWORKS_STUDIO_MODEL = "accounts/fireworks/models/kimi-k2p6"
-  FIREWORKS_EVALUATOR_MODEL = "accounts/fireworks/models/glm-5p2"
-  FIREWORKS_VISION_MODEL = "accounts/fireworks/models/kimi-k2p6"
+  FIREWORKS_MODEL = "accounts/fireworks/models/minimax-m3"
+  FIREWORKS_BUILDER_MODEL = "accounts/fireworks/models/minimax-m3"
+  FIREWORKS_STUDIO_MODEL = "accounts/fireworks/models/minimax-m3"
+  FIREWORKS_EVALUATOR_MODEL = "accounts/fireworks/models/minimax-m3"
+  FIREWORKS_VISION_MODEL = "accounts/fireworks/models/minimax-m3"
 
   BRAINTRUST_API_URL = "https://api.braintrust.dev"
   BRAINTRUST_APP_URL = "https://www.braintrust.dev"

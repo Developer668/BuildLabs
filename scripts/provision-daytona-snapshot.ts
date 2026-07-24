@@ -88,12 +88,12 @@ async function main(): Promise<void> {
 
   if (
     snapshot.state !== "active" ||
-    snapshot.cpu < 2 ||
-    snapshot.mem < 4 ||
-    snapshot.disk < 8
+    snapshot.cpu !== DAYTONA_PINNED_SNAPSHOT_INPUTS.resources.cpu ||
+    snapshot.mem !== DAYTONA_PINNED_SNAPSHOT_INPUTS.resources.memoryGiB ||
+    snapshot.disk !== DAYTONA_PINNED_SNAPSHOT_INPUTS.resources.diskGiB
   ) {
     throw new Error(
-      `Snapshot ${snapshotName} is not active with the required resources`,
+      `Snapshot ${snapshotName} is not active with the daytona-large resource profile`,
     );
   }
   phaseMs.snapshot_acquisition = elapsed(snapshotAcquisitionStarted);

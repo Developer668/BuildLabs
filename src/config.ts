@@ -32,6 +32,10 @@ const ConfigSchema = z
       .default(".buildlabs/build-agent.db"),
     BUILDLABS_ARTIFACT_DIR: z.string().min(1).default(".buildlabs/artifacts"),
     BUILDLABS_INTERNAL_TOKEN: z.string().min(32).optional(),
+    BUILDLABS_ORCHESTRATION_URL: SecureServiceUrlSchema.default(
+      "http://127.0.0.1:3100",
+    ),
+    ORCHESTRATION_INTERNAL_TOKEN: z.string().min(32).optional(),
     BUILDLABS_SLOT_COUNT: z.coerce.number().int().min(1).max(4).default(4),
     BUILDLABS_LEASE_MILLISECONDS: z.coerce
       .number()
@@ -48,7 +52,7 @@ const ConfigSchema = z
       .string()
       .min(1)
       .max(256)
-      .default("buildlabs-dind-browser-v2"),
+      .default("buildlabs-dind-browser-large-v3"),
     DAYTONA_SNAPSHOT_ATTESTATION_PATH: z
       .string()
       .min(1)
@@ -74,17 +78,17 @@ const ConfigSchema = z
     FIREWORKS_MODEL: z
       .string()
       .min(1)
-      .default("accounts/fireworks/models/glm-5p2"),
+      .default("accounts/fireworks/models/minimax-m3"),
     FIREWORKS_BUILDER_MODEL: z.string().min(1).optional(),
     FIREWORKS_STUDIO_MODEL: z
       .string()
       .min(1)
-      .default("accounts/fireworks/models/kimi-k2p6"),
+      .default("accounts/fireworks/models/minimax-m3"),
     FIREWORKS_EVALUATOR_MODEL: z.string().min(1).optional(),
     FIREWORKS_VISION_MODEL: z
       .string()
       .min(1)
-      .default("accounts/fireworks/models/kimi-k2p6"),
+      .default("accounts/fireworks/models/minimax-m3"),
     BRAINTRUST_API_KEY: z.string().min(20),
     BRAINTRUST_API_URL: SecureServiceUrlSchema.default(
       "https://api.braintrust.dev",

@@ -31,7 +31,7 @@ import { daytonaScriptFailureRecord } from "../src/adapters/daytona/daytona-scri
 import { DaytonaJsonlTelemetry } from "../src/adapters/daytona/daytona-telemetry.js";
 import { sha256 } from "../src/lib/canonical-json.js";
 
-const SNAPSHOT = "buildlabs-dind-browser-v2";
+const SNAPSHOT = "buildlabs-dind-browser-large-v3";
 const TARGET = "us";
 const VALIDATED_AT = "2026-07-24T12:00:00.000Z";
 const SHA_A = "a".repeat(64);
@@ -44,8 +44,8 @@ function acquisitionPolicy() {
     snapshot: SNAPSHOT,
     target: TARGET,
     snapshotResources: {
-      cpu: 2,
-      memoryGiB: 4,
+      cpu: 4,
+      memoryGiB: 8,
       diskGiB: 10,
     },
     warmPoolEnabled: true,
@@ -61,8 +61,8 @@ function warmSandbox(
     snapshot: SNAPSHOT,
     target: TARGET,
     user: "daytona",
-    cpu: 2,
-    memoryGiB: 4,
+    cpu: 4,
+    memoryGiB: 8,
     diskGiB: 10,
     ...overrides,
   };
@@ -89,8 +89,8 @@ function attestationPayload(
       sandboxClass: "container",
       regionIds: [TARGET],
       resources: {
-        cpu: 2,
-        memoryGiB: 4,
+        cpu: 4,
+        memoryGiB: 8,
         diskGiB: 10,
       },
       buildInfo: {
@@ -136,8 +136,8 @@ function readinessEvidence(
       name: SNAPSHOT,
       state: "active",
       target: TARGET,
-      cpu: 2,
-      memoryGiB: 4,
+      cpu: 4,
+      memoryGiB: 8,
       diskGiB: 10,
     },
     snapshotAttestation: "runtime_verified",
@@ -303,8 +303,8 @@ describe("Daytona warm-pool acquisition policy", () => {
     ["snapshot", { snapshot: "wrong-snapshot" }],
     ["target", { target: "eu" }],
     ["user", { user: "root" }],
-    ["cpu", { cpu: 4 }],
-    ["memory", { memoryGiB: 8 }],
+    ["cpu", { cpu: 2 }],
+    ["memory", { memoryGiB: 4 }],
     ["disk", { diskGiB: 20 }],
   ])("fails closed when the observed pool %s drifts", (_name, drift) => {
     expect(() =>
@@ -400,8 +400,8 @@ describe("Daytona snapshot supply-chain attestations", () => {
           ...observation,
           target: TARGET,
           resources: {
-            cpu: 2,
-            memoryGiB: 4,
+            cpu: 4,
+            memoryGiB: 8,
             diskGiB: 10,
           },
           dockerServerVersion: "28.3.3",
@@ -425,7 +425,7 @@ describe("Daytona snapshot supply-chain attestations", () => {
 
   it("binds snapshot resources to the pinned image inputs", () => {
     const payload = structuredClone(attestationPayload());
-    payload.snapshot.resources.cpu = 4;
+    payload.snapshot.resources.cpu = 2;
 
     expect(() => createDaytonaSnapshotAttestation(payload)).toThrow(
       "resources drifted",
@@ -499,9 +499,9 @@ describe("Daytona capability state boundaries", () => {
   });
 
   it.each([
-    ["undersized disk", { cpu: 2, memoryGiB: 4, diskGiB: 8 }],
-    ["oversized CPU", { cpu: 4, memoryGiB: 4, diskGiB: 10 }],
-    ["oversized memory", { cpu: 2, memoryGiB: 8, diskGiB: 10 }],
+    ["undersized disk", { cpu: 4, memoryGiB: 8, diskGiB: 8 }],
+    ["undersized CPU", { cpu: 2, memoryGiB: 8, diskGiB: 10 }],
+    ["undersized memory", { cpu: 4, memoryGiB: 4, diskGiB: 10 }],
   ])("rejects %s from exact pinned resource readiness", (_name, resources) => {
     const evidence = readinessEvidence();
     evidence.snapshot = {

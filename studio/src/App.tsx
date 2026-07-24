@@ -56,6 +56,7 @@ import {
   loadStudioRuns,
   loadStudioSelection,
   StudioApiError,
+  submitStudioDemoIntake,
 } from "./api";
 import type {
   EvidenceReceipt,
@@ -67,7 +68,7 @@ import type {
   StudioSelection,
 } from "./types";
 
-type DataMode = "connecting" | "live" | "unavailable";
+type DataMode = "connecting" | "empty" | "live" | "unavailable";
 type LayoutMode = "focus" | "two" | "four";
 type InspectorTab = "activity" | "contract" | "proof" | "diff" | "tree";
 type MonitorTab = "preview" | "code" | "diff" | "terminal" | "components";
@@ -131,6 +132,7 @@ export function App() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [reviewDraft, setReviewDraft] = useState("");
+  const [demoSubmitting, setDemoSubmitting] = useState(false);
   const [inspectorWidth, setInspectorWidth] = useState(430);
   const [candidateHeight, setCandidateHeight] = useState(207);
   const [toast, setToast] = useState<{
@@ -163,7 +165,7 @@ export function App() {
       try {
         const response = await loadStudioRuns(connection, signal);
         if (response.runs.length === 0) {
-          setMode("unavailable");
+          setMode("empty");
           setRuns([]);
           setSelectedId("");
           setSelection(null);
@@ -262,6 +264,32 @@ export function App() {
     setDraft("");
   };
 
+  const startTextDemo = async () => {
+    const normalized = draft.trim();
+    if (!normalized || demoSubmitting) return;
+    setDemoSubmitting(true);
+    try {
+      await submitStudioDemoIntake(connection, normalized);
+      setDraft("");
+      showToast(
+        "contract",
+        "Text demo queued",
+        "The request entered the normal contract, payment, build, proof, and delivery pipeline.",
+      );
+      void refreshRuns();
+    } catch (error) {
+      showToast(
+        "evidence",
+        "Text demo unavailable",
+        error instanceof Error
+          ? error.message
+          : "The intake could not be sent.",
+      );
+    } finally {
+      setDemoSubmitting(false);
+    }
+  };
+
   const beginWorkspaceResize = (
     axis: "columns" | "rows",
     event: ReactPointerEvent<HTMLButtonElement>,
@@ -318,8 +346,13 @@ export function App() {
     return (
       <UnavailableStudio
         connectionMessage={connectionMessage}
+        demoSubmitting={demoSubmitting}
+        draft={draft}
         mode={mode}
         navView={navView}
+        onDemoSubmit={() => void startTextDemo()}
+        onDraftChange={setDraft}
+        onDraftSubmit={requestReview}
         onProfileClose={() => setProfileOpen(false)}
         onProfileToggle={() => setProfileOpen((value) => !value)}
         onViewChange={setNavView}
@@ -511,6 +544,8 @@ export function App() {
           value={draft}
           onChange={setDraft}
           onSubmit={requestReview}
+          onDemoSubmit={() => void startTextDemo()}
+          demoSubmitting={demoSubmitting}
           reviewDraft={reviewDraft}
           onClearReview={() => setReviewDraft("")}
         />
@@ -549,16 +584,26 @@ export function App() {
 
 function UnavailableStudio({
   connectionMessage,
+  demoSubmitting,
+  draft,
   mode,
   navView,
+  onDemoSubmit,
+  onDraftChange,
+  onDraftSubmit,
   onProfileClose,
   onProfileToggle,
   onViewChange,
   profileOpen,
 }: {
   connectionMessage: string;
+  demoSubmitting: boolean;
+  draft: string;
   mode: DataMode;
   navView: NavView;
+  onDemoSubmit: () => void;
+  onDraftChange: (value: string) => void;
+  onDraftSubmit: () => void;
   onProfileClose: () => void;
   onProfileToggle: () => void;
   onViewChange: (view: NavView) => void;
@@ -582,24 +627,208 @@ function UnavailableStudio({
             No active project
           </span>
         </div>
-        <StatusPill mode={mode} message={connectionMessage} />
+        <div className="lifecycle" aria-label="Build lifecycle">
+          <ol className="lifecycle-track">
+            {["Paid", "Contract", "Reviewing", "Proof", "Deploy"].map(
+              (stage, index) => (
+                <li className="lifecycle-step" key={stage}>
+                  <span className="lifecycle-dot" />
+                  <span className="lifecycle-name">{stage}</span>
+                  {index < 4 ? <span className="lifecycle-link" /> : null}
+                </li>
+              ),
+            )}
+          </ol>
+        </div>
+        <div className="topbar-actions">
+          <span className="slot-count">0 / 4 slots</span>
+          <StatusPill mode={mode} message={connectionMessage} />
+        </div>
       </header>
-      <main className="studio unavailable-studio">
-        <section className="studio-unavailable" aria-live="polite">
-          <Unplug size={30} aria-hidden="true" />
-          <h1>
-            {mode === "connecting"
-              ? "Connecting to build data"
-              : "Build data unavailable"}
-          </h1>
-          <p>{connectionMessage}</p>
-          <span>
-            Candidates, contracts, activity, and proof receipts appear only when
-            they are returned by the authenticated backend.
-          </span>
-        </section>
-      </main>
+      {mode === "empty" ? (
+        navView === "studio" ? (
+          <ConnectedEmptyStudio connectionMessage={connectionMessage} />
+        ) : (
+          <NavPage
+            view={navView}
+            runs={[]}
+            mode={mode}
+            onSelectRun={() => undefined}
+          />
+        )
+      ) : (
+        <main className="studio unavailable-studio">
+          <section className="studio-unavailable" aria-live="polite">
+            <Unplug size={30} aria-hidden="true" />
+            <h1>
+              {mode === "connecting"
+                ? "Connecting to build data"
+                : "Build data unavailable"}
+            </h1>
+            <p>{connectionMessage}</p>
+            <span>
+              Candidates, contracts, activity, and proof receipts appear only
+              when they are returned by the authenticated backend.
+            </span>
+          </section>
+        </main>
+      )}
+      {mode === "empty" && navView === "studio" ? (
+        <AssistantBar
+          value={draft}
+          onChange={onDraftChange}
+          onSubmit={onDraftSubmit}
+          onDemoSubmit={onDemoSubmit}
+          demoSubmitting={demoSubmitting}
+          reviewDraft=""
+          onClearReview={() => undefined}
+        />
+      ) : (
+        <div className="assistant-spacer" />
+      )}
     </div>
+  );
+}
+
+function ConnectedEmptyStudio({
+  connectionMessage,
+}: {
+  connectionMessage: string;
+}) {
+  return (
+    <main className="studio connected-empty-studio">
+      <section className="studio-toolbar">
+        <div>
+          <strong>Build workspace</strong>
+          <span className="muted-dot">•</span>
+          <span>Waiting for first run</span>
+          <StatusPill mode="empty" message={connectionMessage} />
+        </div>
+        <div />
+        <div className="toolbar-end">
+          <button className="quiet-button" type="button" disabled>
+            <Pause size={14} />
+            Live updates
+          </button>
+          <button className="secondary-button" type="button" disabled>
+            <ShieldCheck size={15} />
+            Open evidence
+          </button>
+        </div>
+      </section>
+
+      <div
+        className="studio-grid empty-studio-grid"
+        style={
+          {
+            "--inspector-width": "430px",
+            "--candidate-height": "176px",
+          } as CSSProperties
+        }
+      >
+        <section className="workbench empty-workbench">
+          <div className="monitor-layout">
+            <section className="monitor-frame">
+              <header className="monitor-header">
+                <div className="monitor-title">
+                  <Monitor size={15} />
+                  <strong>Builder monitor</strong>
+                  <span>No active candidate</span>
+                </div>
+                <div className="monitor-status">
+                  <span className="run-state complete">Ready</span>
+                </div>
+                <div className="monitor-actions" />
+              </header>
+              <div className="monitor-content">
+                <div className="empty-ready-state">
+                  <CheckCircle2 size={28} aria-hidden="true" />
+                  <p>Backend ready for a build</p>
+                  <span>
+                    The next verified phone or text intake will appear here
+                    automatically.
+                  </span>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div className="monitor-tabs">
+            <div className="monitor-tab-list">
+              <button className="active" type="button" disabled>
+                <Monitor size={13} /> Preview
+              </button>
+              <button type="button" disabled>
+                <Code2 size={13} /> Code
+              </button>
+              <button type="button" disabled>
+                <FileDiff size={13} /> Diff
+              </button>
+              <button type="button" disabled>
+                <TerminalSquare size={13} /> Terminal
+              </button>
+              <button type="button" disabled>
+                <Boxes size={13} /> Components
+              </button>
+            </div>
+          </div>
+
+          <div className="empty-workbench-divider" />
+
+          <section className="empty-candidate-strip">
+            <div>
+              <strong>Candidates</strong>
+              <span>0 candidates</span>
+            </div>
+            <p>
+              Candidate revisions and independent verifier results will appear
+              here after the first build starts.
+            </p>
+          </section>
+        </section>
+
+        <div className="empty-column-divider" />
+
+        <aside className="inspector empty-inspector">
+          <div className="inspector-tabs">
+            {["Activity", "Contract", "Proof", "Diff", "Tree"].map(
+              (tabName, index) => (
+                <button
+                  className={index === 0 ? "active" : ""}
+                  type="button"
+                  disabled
+                  key={tabName}
+                >
+                  {tabName}
+                </button>
+              ),
+            )}
+          </div>
+          <div className="inspector-content">
+            <section className="inspector-section">
+              <div className="section-heading">
+                <div>
+                  <h2>Live activity</h2>
+                  <p>Backend connected</p>
+                </div>
+              </div>
+            </section>
+            <div className="empty-activity-state">
+              <Activity size={24} aria-hidden="true" />
+              <strong>No activity yet</strong>
+              <span>
+                Daytona, Fireworks, CodeRabbit, and Braintrust events will
+                stream here when a run begins.
+              </span>
+            </div>
+          </div>
+          <div className="empty-inspector-footer">
+            <span className="run-state complete">Connected</span>
+            <span>Polling every 8 seconds</span>
+          </div>
+        </aside>
+      </div>
+    </main>
   );
 }
 
@@ -748,9 +977,11 @@ function StatusPill({ mode, message }: { mode: DataMode; message: string }) {
       <span />
       {mode === "live"
         ? "Live"
-        : mode === "connecting"
-          ? "Connecting"
-          : "Disconnected"}
+        : mode === "empty"
+          ? "Connected"
+          : mode === "connecting"
+            ? "Connecting"
+            : "Disconnected"}
     </button>
   );
 }
@@ -1834,18 +2065,26 @@ function AssistantBar({
   value,
   onChange,
   onSubmit,
+  onDemoSubmit,
+  demoSubmitting,
   reviewDraft,
   onClearReview,
 }: {
   value: string;
   onChange: (value: string) => void;
   onSubmit: () => void;
+  onDemoSubmit: () => void;
+  demoSubmitting: boolean;
   reviewDraft: string;
   onClearReview: () => void;
 }) {
   return (
     <footer className="assistant-shell">
       <div className="assistant-center">
+        <div className="text-demo-label">
+          <strong>No-phone demo</strong>
+          <span>Describe what to build, then click Text demo.</span>
+        </div>
         {reviewDraft ? (
           <div className="review-banner">
             <ShieldCheck size={15} />
@@ -1873,22 +2112,34 @@ function AssistantBar({
                 onSubmit();
               }
             }}
-            placeholder="Inspect this run, compare candidates, or draft a verified change brief…"
+            placeholder="Describe the website or application you want the agent swarm to build..."
             aria-label="Draft a reviewed operator action"
           />
-          <button
-            className="review-button"
-            type="button"
-            disabled={!value.trim()}
-            onClick={onSubmit}
-          >
-            Review action
-            <Send size={14} />
-          </button>
+          <div className="assistant-actions">
+            <button
+              className="demo-button"
+              type="button"
+              disabled={!value.trim() || demoSubmitting}
+              onClick={onDemoSubmit}
+            >
+              {demoSubmitting ? "Sending…" : "Text demo"}
+              <Play size={14} />
+            </button>
+            <button
+              className="review-button"
+              type="button"
+              disabled={!value.trim() || demoSubmitting}
+              onClick={onSubmit}
+            >
+              Review action
+              <Send size={14} />
+            </button>
+          </div>
         </div>
         <p className="safety-copy">
           <ShieldCheck size={13} />
-          Drafts do not reach the build swarm until an admin approves them.
+          Review actions stay gated. Text demo starts a new intake through the
+          normal payment and proof pipeline.
         </p>
       </div>
     </footer>

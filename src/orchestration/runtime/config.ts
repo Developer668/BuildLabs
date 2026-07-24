@@ -199,7 +199,7 @@ const OrchestrationConfigSchema = z
       .string()
       .min(1)
       .max(512)
-      .default("accounts/fireworks/models/kimi-k2p6"),
+      .default("accounts/fireworks/models/minimax-m3"),
     BRAINTRUST_API_KEY: SecretSchema,
     BRAINTRUST_API_URL: HttpsBaseUrlSchema.default(
       "https://api.braintrust.dev",
