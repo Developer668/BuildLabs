@@ -557,7 +557,7 @@ function IconRail({
     <nav className="icon-rail" aria-label="Primary navigation">
       <div className="brand-mark" aria-label="BuildLabs">
         <img
-          src={`${import.meta.env.BASE_URL}buildlabs-logo.png`}
+          src={`${import.meta.env.BASE_URL}buildlabs-logo-dark.png`}
           alt=""
           aria-hidden="true"
         />

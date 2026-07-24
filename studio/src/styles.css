@@ -128,8 +128,7 @@ textarea:focus-visible {
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  filter: drop-shadow(0 0 1px rgb(255 255 255 / 48%))
-    drop-shadow(0 4px 8px rgb(0 0 0 / 35%));
+  filter: none;
   object-fit: contain;
 }
 
