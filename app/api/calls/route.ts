@@ -1,13 +1,24 @@
 import { listCalls } from "../../../db/calls";
 import { callLabAuthorized, unauthorizedResponse } from "../../../lib/call-access";
+import { syncCompletedElevenLabsCalls } from "../../../lib/elevenlabs-sync";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   if (!callLabAuthorized(request)) return unauthorizedResponse();
+  let warning = "";
+  try {
+    await syncCompletedElevenLabsCalls();
+  } catch (error) {
+    warning =
+      error instanceof Error
+        ? `Saved calls loaded, but sync failed: ${error.message}`
+        : "Saved calls loaded, but ElevenLabs sync failed.";
+  }
+
   try {
     return Response.json(
-      { calls: await listCalls() },
+      { calls: await listCalls(), warning },
       { headers: { "cache-control": "no-store" } },
     );
   } catch {

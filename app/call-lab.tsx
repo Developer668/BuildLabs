@@ -72,6 +72,7 @@ export function CallLab() {
   const [calls, setCalls] = useState<CallRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("Enter the dashboard access code to load transcripts.");
+  const [warning, setWarning] = useState("");
   const [copied, setCopied] = useState(false);
 
   const totals = useMemo(() => {
@@ -101,6 +102,7 @@ export function CallLab() {
       const body = (await response.json().catch(() => ({}))) as {
         calls?: CallRecord[];
         error?: string;
+        warning?: string;
       };
       if (!response.ok) {
         setCalls([]);
@@ -108,6 +110,7 @@ export function CallLab() {
         return;
       }
       setCalls(body.calls ?? []);
+      setWarning(body.warning ?? "");
       setMessage(body.calls?.length ? "" : "No transcripts yet. Call the number above, finish the intake, then refresh.");
     } catch {
       setMessage("Transcripts could not be loaded.");
@@ -193,6 +196,7 @@ export function CallLab() {
           </div>
         ) : (
           <div className="callArchive">
+            {warning && <p className="callError">{warning}</p>}
             {calls.map((call, index) => (
               <details className="call" key={call.id} open={index === 0}>
                 <summary>

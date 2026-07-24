@@ -9,9 +9,10 @@ agent.
 2. Plivo forwards the call over an inbound SIP trunk.
 3. The ElevenLabs agent listens, speaks, and gathers the website brief one
    question at a time.
-4. ElevenLabs sends a signed post-call transcript webhook.
-5. The app verifies the signature, saves the transcript to D1, and shows the
-   call as successful or failed.
+4. After the call ends, press **Refresh** on the localhost dashboard.
+5. The server fetches only new completed calls from ElevenLabs, saves them to
+   the project-local D1 database, and shows whether each call succeeded or
+   failed and why.
 
 ## Local development
 
@@ -26,9 +27,10 @@ runtime fields used by this dashboard are:
 ```text
 PLIVO_PRIMARY_NUMBER
 ELEVENLABS_AGENT_ID
-ELEVENLABS_WEBHOOK_SECRET
+ELEVENLABS_API_KEY
 CALL_LAB_ACCESS_CODE
 ```
 
-The transcript webhook URL is `/api/webhooks/elevenlabs`. The dashboard list
-API requires the access code in the `x-call-lab-key` header.
+The dashboard is intended for `http://localhost:3000/`. It does not poll in the
+background: the transcript API is called only when Refresh is pressed. The
+dashboard list API requires the access code in the `x-call-lab-key` header.
