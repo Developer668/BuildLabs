@@ -16,7 +16,6 @@ const publicVoiceHost = (() => {
 
 const localBindingConfig = {
   main: "./worker/index.ts",
-  compatibility_flags: ["nodejs_compat"],
 };
 
 export default defineConfig({

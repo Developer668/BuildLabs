@@ -295,8 +295,8 @@ Register these only after the receiving service is deployed and healthy.
 | ElevenLabs SIP pre-call | `https://<voice-intake worker origin>/api/telephony/elevenlabs/init` |
 
 - Copy Stripe's signing secret into `STRIPE_WEBHOOK_SECRET` and Resend's into
-  `RESEND_WEBHOOK_SECRET`; both services verify signatures and reject unsigned
-  deliveries.
+  `RESEND_WEBHOOK_SECRET`; the orchestrator verifies both signatures and
+  rejects unsigned deliveries.
 - The ElevenLabs endpoints are **not** registered by hand. Set
   `BUILDLABS_VOICE_PUBLIC_BASE_URL` to the Worker origin and run the
   repository's reconciler, which is read-only until explicitly applied:

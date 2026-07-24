@@ -3,6 +3,8 @@ import {
   createCopilotRuntimeHandler,
 } from "@copilotkit/runtime/v2";
 
+import { dashboardFixturesEnabled } from "../../../../../lib/fixture-mode";
+
 const basePath = "/api/copilotkit/fixture";
 
 const runtime = new CopilotRuntime({
@@ -30,7 +32,7 @@ export async function DELETE(request: Request): Promise<Response> {
 }
 
 function fixtureOnly(request: Request): Promise<Response> | Response {
-  if (process.env.BUILDLABS_DASHBOARD_FIXTURES !== "1") {
+  if (!dashboardFixturesEnabled()) {
     return Response.json(
       { error: "not_found" },
       {

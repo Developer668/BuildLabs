@@ -610,14 +610,24 @@ describe("ElevenLabs agent reconciliation", () => {
   });
 
   it("asserts webhook event subscriptions only when the provider reports them", async () => {
-    // A read that omits `events` must not read as drift: this reconciler never
-    // writes the webhook resource, so that drift could never be repaired.
+    // A read that omits events or reports no agent-managed event must not read
+    // as drift: this reconciler never writes the webhook resource.
     const silent = new InMemoryElevenLabsAdmin();
     const silentWebhook = silent.webhooks[0];
     if (!silentWebhook) throw new Error("Missing webhook test fixture");
     expect(silentWebhook.events).toBeUndefined();
     expect(
       (await new ElevenLabsAgentReconciler(silent).plan(BINDINGS)).changes,
+    ).toContainEqual(
+      expect.objectContaining({ resource: "webhook", action: "none" }),
+    );
+
+    const empty = new InMemoryElevenLabsAdmin();
+    const emptyWebhook = empty.webhooks[0];
+    if (!emptyWebhook) throw new Error("Missing webhook test fixture");
+    emptyWebhook.events = [];
+    expect(
+      (await new ElevenLabsAgentReconciler(empty).plan(BINDINGS)).changes,
     ).toContainEqual(
       expect.objectContaining({ resource: "webhook", action: "none" }),
     );

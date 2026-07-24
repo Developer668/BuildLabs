@@ -1139,15 +1139,15 @@ function buildDesiredWebhook(
   };
 }
 
-// The provider omits `events` from some webhook reads. Assert event
-// subscriptions only when the remote actually reports them: this reconciler
-// never writes the webhook resource, so an unconditional assertion would
-// report permanent drift that no apply could ever repair.
+// The provider may omit `events` or return an empty list for an agent-managed
+// post-call callback. Assert subscriptions only when it reports a non-empty
+// list: this reconciler never writes the webhook resource, so an unconditional
+// assertion would report permanent drift that no apply could ever repair.
 function assertableWebhook(
   remote: JsonRecord | undefined,
   desired: JsonRecord,
 ): JsonRecord {
-  if (remote && "events" in remote) {
+  if (remote && Array.isArray(remote.events) && remote.events.length > 0) {
     return desired;
   }
   return Object.fromEntries(

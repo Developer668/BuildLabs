@@ -30,7 +30,8 @@ http://127.0.0.1:5173/studio/
 ```
 
 Vite proxies `/v1`, `/health`, and `/ready` to `http://127.0.0.1:3000`. If the
-build backend is not running, the page loads labeled demo candidates.
+build backend is not running, the page shows an explicit unavailable state and
+does not render candidate or proof data.
 
 Start the build backend in a second terminal:
 
@@ -151,17 +152,16 @@ npm run build
 
 ## Troubleshooting
 
-### Studio shows Demo
+### Studio shows unavailable
 
-Demo mode appears when:
+The unavailable state appears when:
 
 - the backend is not reachable;
 - the internal token is missing or incorrect;
 - the backend returned no runs.
 
 Open Settings to read the current connection message. If the backend is
-reachable but has no runs, the message explicitly says that sample candidates
-are shown.
+reachable but has no runs, the Studio shows no candidates or proof records.
 
 ### Studio returns 401
 
@@ -172,7 +172,7 @@ Settings dialog.
 
 A mutable preview is available only after a run has both `sandboxId` and
 `previewPort`. If preview signing fails or the run has not started its preview,
-Studio falls back to the labeled sample visualization.
+Studio shows the unavailable preview state.
 
 ### Source code is not visible in Code view
 

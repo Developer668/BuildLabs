@@ -281,6 +281,7 @@ export function createHttpServer(
       return;
     }
     if (
+      request.url === "/" ||
       request.url === "/health" ||
       request.url === "/ready" ||
       request.url === "/studio" ||
@@ -1218,6 +1219,7 @@ function registerStudioShell(server: FastifyInstance): void {
     decorateReply: false,
     index: ["index.html"],
   });
+  server.get("/", (_request, reply) => reply.redirect("/studio/"));
   server.get("/studio", (_request, reply) => reply.redirect("/studio/"));
   server.addHook("onSend", (request, reply, payload, done) => {
     if (request.url === "/studio" || request.url.startsWith("/studio/")) {

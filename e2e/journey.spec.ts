@@ -69,10 +69,12 @@ test.describe("BuildLabs cross-service journey", () => {
     );
 
     await test.step("hop 1: browser voice intake with a fake microphone", async () => {
-      test.skip(
-        voiceUnavailable !== undefined,
-        `Voice intake service unavailable: ${voiceUnavailable ?? ""}`,
-      );
+      if (voiceUnavailable !== undefined) {
+        // Never let an unbooted service read as a pass. The hop is recorded as
+        // not exercised and the rest of the journey still runs.
+        notExercised("hop 1", voiceUnavailable);
+        return;
+      }
       await page.goto(`${runtime.origins.voiceIntake}/`, {
         waitUntil: "domcontentloaded",
       });

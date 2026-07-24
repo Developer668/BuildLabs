@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { OperatorLiveQueue } from "../../components/operator-live";
 import { OperatorStudio } from "../../components/operator-studio";
+import { dashboardFixturesEnabled } from "../../lib/fixture-mode";
 import { operatorFixture } from "../../lib/operator-data";
 import {
   OPERATOR_SESSION_COOKIE,
@@ -18,7 +19,7 @@ export default async function OperatorPage() {
     redirect("/operator/sign-in");
   }
 
-  if (process.env.BUILDLABS_DASHBOARD_FIXTURES === "1") {
+  if (dashboardFixturesEnabled()) {
     return <OperatorStudio project={operatorFixture} />;
   }
 

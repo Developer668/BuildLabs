@@ -1,5 +1,7 @@
 import sharp from "sharp";
 
+import { dashboardFixturesEnabled } from "../../../../../lib/fixture-mode";
+
 const FIXTURE_BUILDER = "bld_aaaaaaaaaaaaaaaaaaaaaa";
 
 export const dynamic = "force-dynamic";
@@ -9,10 +11,7 @@ export async function GET(
   context: { params: Promise<{ builderAlias: string }> },
 ): Promise<Response> {
   const { builderAlias } = await context.params;
-  if (
-    process.env.BUILDLABS_DASHBOARD_FIXTURES !== "1" ||
-    builderAlias !== FIXTURE_BUILDER
-  ) {
+  if (!dashboardFixturesEnabled() || builderAlias !== FIXTURE_BUILDER) {
     return new Response(null, { status: 404 });
   }
 

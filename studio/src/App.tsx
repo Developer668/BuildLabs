@@ -57,7 +57,6 @@ import {
   loadStudioSelection,
   StudioApiError,
 } from "./api";
-import { demoRuns, demoSelection } from "./demo";
 import type {
   EvidenceReceipt,
   RunEvent,
@@ -68,7 +67,7 @@ import type {
   StudioSelection,
 } from "./types";
 
-type DataMode = "connecting" | "live" | "demo";
+type DataMode = "connecting" | "live" | "unavailable";
 type LayoutMode = "focus" | "two" | "four";
 type InspectorTab = "activity" | "contract" | "proof" | "diff" | "tree";
 type MonitorTab = "preview" | "code" | "diff" | "terminal" | "components";
@@ -118,11 +117,9 @@ const monitorTabs: Array<{
 export function App() {
   const [connection] = useState<StudioConnection>(loadConnection);
   const [mode, setMode] = useState<DataMode>("connecting");
-  const [runs, setRuns] = useState<StudioRun[]>(demoRuns);
-  const [selectedId, setSelectedId] = useState(demoRuns[1]!.run.id);
-  const [selection, setSelection] = useState<StudioSelection>(
-    demoSelection(demoRuns[1]!),
-  );
+  const [runs, setRuns] = useState<StudioRun[]>([]);
+  const [selectedId, setSelectedId] = useState("");
+  const [selection, setSelection] = useState<StudioSelection | null>(null);
   const [connectionMessage, setConnectionMessage] = useState(
     "Connecting to the BuildLabs backend…",
   );
@@ -144,7 +141,7 @@ export function App() {
   } | null>(null);
 
   const selectedRun =
-    runs.find((item) => item.run.id === selectedId) ?? runs[0] ?? demoRuns[0]!;
+    runs.find((item) => item.run.id === selectedId) ?? runs[0];
 
   const showToast = useCallback(
     (
@@ -166,10 +163,12 @@ export function App() {
       try {
         const response = await loadStudioRuns(connection, signal);
         if (response.runs.length === 0) {
-          setMode("demo");
-          setRuns(demoRuns);
+          setMode("unavailable");
+          setRuns([]);
+          setSelectedId("");
+          setSelection(null);
           setConnectionMessage(
-            "Backend connected; no build runs yet. Waiting for work to arrive.",
+            "Backend connected; no build runs have been recorded.",
           );
           return;
         }
@@ -185,8 +184,10 @@ export function App() {
         if (signal?.aborted) {
           return;
         }
-        setMode("demo");
-        setRuns(demoRuns);
+        setMode("unavailable");
+        setRuns([]);
+        setSelectedId("");
+        setSelection(null);
         setConnectionMessage(
           error instanceof StudioApiError && error.status === 401
             ? "Backend token required. Disconnected."
@@ -214,8 +215,8 @@ export function App() {
   }, [paused, refreshRuns]);
 
   useEffect(() => {
-    if (mode !== "live") {
-      setSelection(demoSelection(selectedRun));
+    if (mode !== "live" || !selectedRun) {
+      setSelection(null);
       return;
     }
     const controller = new AbortController();
@@ -233,11 +234,17 @@ export function App() {
     return () => controller.abort();
   }, [connection, mode, selectedRun]);
 
-  const projectName = formatProjectName(selectedRun.run.projectId);
+  const projectName = selectedRun
+    ? formatProjectName(selectedRun.run.projectId)
+    : "No active project";
   const projectRuns = useMemo(
     () =>
-      runs.filter((item) => item.run.projectId === selectedRun.run.projectId),
-    [runs, selectedRun.run.projectId],
+      selectedRun
+        ? runs.filter(
+            (item) => item.run.projectId === selectedRun.run.projectId,
+          )
+        : [],
+    [runs, selectedRun],
   );
   const completedSlots = projectRuns.filter((item) =>
     ["passed", "rejected", "failed", "cancelled"].includes(item.run.status),
@@ -306,6 +313,20 @@ export function App() {
     window.addEventListener("pointerup", stopResize);
     window.addEventListener("pointercancel", stopResize);
   };
+
+  if (mode !== "live" || !selectedRun || !selection) {
+    return (
+      <UnavailableStudio
+        connectionMessage={connectionMessage}
+        mode={mode}
+        navView={navView}
+        onProfileClose={() => setProfileOpen(false)}
+        onProfileToggle={() => setProfileOpen((value) => !value)}
+        onViewChange={setNavView}
+        profileOpen={profileOpen}
+      />
+    );
+  }
 
   return (
     <div className="app-shell">
@@ -522,6 +543,62 @@ export function App() {
           </button>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function UnavailableStudio({
+  connectionMessage,
+  mode,
+  navView,
+  onProfileClose,
+  onProfileToggle,
+  onViewChange,
+  profileOpen,
+}: {
+  connectionMessage: string;
+  mode: DataMode;
+  navView: NavView;
+  onProfileClose: () => void;
+  onProfileToggle: () => void;
+  onViewChange: (view: NavView) => void;
+  profileOpen: boolean;
+}) {
+  return (
+    <div className="app-shell">
+      <IconRail
+        view={navView}
+        onViewChange={onViewChange}
+        profileOpen={profileOpen}
+        onProfileToggle={onProfileToggle}
+        onProfileClose={onProfileClose}
+      />
+      <header className="topbar">
+        <div className="topbar-project">
+          <span className="studio-label">Admin Studio</span>
+          <span className="topbar-divider" />
+          <span className="project-switcher unavailable-project">
+            <User size={15} className="project-icon" />
+            No active project
+          </span>
+        </div>
+        <StatusPill mode={mode} message={connectionMessage} />
+      </header>
+      <main className="studio unavailable-studio">
+        <section className="studio-unavailable" aria-live="polite">
+          <Unplug size={30} aria-hidden="true" />
+          <h1>
+            {mode === "connecting"
+              ? "Connecting to build data"
+              : "Build data unavailable"}
+          </h1>
+          <p>{connectionMessage}</p>
+          <span>
+            Candidates, contracts, activity, and proof receipts appear only when
+            they are returned by the authenticated backend.
+          </span>
+        </section>
+      </main>
     </div>
   );
 }
@@ -767,7 +844,7 @@ function MonitorArea({
           />
           <div className="monitor-content">
             {layout !== "focus" && index > 0 ? (
-              mode === "demo" ? (
+              mode === "unavailable" ? (
                 <DisconnectedState />
               ) : (
                 <SitePreview variant={index} compact />
@@ -895,7 +972,7 @@ function MonitorContent({
   selection: StudioSelection;
   mode: DataMode;
 }) {
-  if (mode === "demo") {
+  if (mode === "unavailable") {
     return <DisconnectedState />;
   }
   if (tab === "preview") {
@@ -1114,13 +1191,13 @@ function CandidateStrip({
           <button
             className={`candidate-card ${
               run.run.id === selectedId ? "selected" : ""
-            } ${mode === "demo" ? "disconnected" : ""}`}
+            } ${mode === "unavailable" ? "disconnected" : ""}`}
             type="button"
             key={run.run.id}
             onClick={() => onSelect(run)}
           >
             <div className="candidate-thumb">
-              {mode === "demo" ? (
+              {mode === "unavailable" ? (
                 <span className="thumb-disconnected">
                   <Unplug size={18} />
                   Offline
@@ -1262,7 +1339,7 @@ function ActivityPanel({
             </p>
           </div>
           <span className={`mode-indicator ${mode}`}>
-            {mode === "live" ? "LIVE" : "DEMO"}
+            {mode === "live" ? "LIVE" : "UNAVAILABLE"}
           </span>
         </div>
       </section>

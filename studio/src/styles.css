@@ -465,9 +465,53 @@ textarea:focus-visible {
   background: rgb(75 111 255 / 10%);
 }
 
-.connection-pill.demo {
+.connection-pill.unavailable {
   color: var(--amber);
   background: rgb(205 160 64 / 10%);
+}
+
+.unavailable-project {
+  cursor: default;
+}
+
+.unavailable-studio {
+  display: grid;
+  place-items: center;
+  min-height: calc(100vh - 72px);
+  padding: 32px;
+}
+
+.studio-unavailable {
+  display: flex;
+  width: min(100%, 520px);
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 28px;
+  border: 1px solid var(--line);
+  background: var(--surface-0);
+  text-align: center;
+}
+
+.studio-unavailable svg {
+  color: var(--amber);
+}
+
+.studio-unavailable h1,
+.studio-unavailable p {
+  margin: 0;
+}
+
+.studio-unavailable h1 {
+  color: #d8e0e3;
+  font-size: 18px;
+}
+
+.studio-unavailable p,
+.studio-unavailable span {
+  color: var(--muted-2);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .segmented-control {

@@ -83,19 +83,22 @@ async function waitForInvocation(
     );
     const bucketingPending = invocation.bucketingStatus === "pending";
     if (!pending && !bucketingPending) {
+      if (invocation.testRuns.length !== expectedTrialCount)
+        throw new Error("TestInvocationTrialCountMismatch");
+      if (invocation.testRuns.some((run) => run.agentId !== expectedAgentId))
+        throw new Error("TestInvocationAgentMismatch");
+      if (invocation.testRuns.some((run) => run.branchId !== expectedBranchId))
+        throw new Error("TestInvocationBranchMismatch");
+      if (invocation.testRuns.some((run) => run.environment !== "testing"))
+        throw new Error("TestInvocationEnvironmentMismatch");
+      if (invocation.testRuns.some((run) => !expectedTests.has(run.testId)))
+        throw new Error("TestInvocationTestSetMismatch");
       if (
-        invocation.testRuns.length !== expectedTrialCount ||
         invocation.testRuns.some(
-          (run) =>
-            run.agentId !== expectedAgentId ||
-            run.branchId !== expectedBranchId ||
-            run.environment !== "testing" ||
-            !expectedTests.has(run.testId) ||
-            (run.status !== "passed" && run.status !== "failed"),
+          (run) => run.status !== "passed" && run.status !== "failed",
         )
-      ) {
-        throw new Error("TestInvocationIncomplete");
-      }
+      )
+        throw new Error("TestInvocationUnexpectedStatus");
       return invocation;
     }
     if (Date.now() >= deadline) throw new Error("TestInvocationTimeout");
@@ -298,6 +301,11 @@ try {
     `${JSON.stringify({
       status: "failed",
       error: error instanceof Error ? error.name : "UnknownError",
+      code:
+        error instanceof Error &&
+        /^[A-Za-z][A-Za-z0-9]{2,127}$/u.test(error.message)
+          ? error.message
+          : "UnknownFailure",
     })}\n`,
   );
   process.exitCode = 1;

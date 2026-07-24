@@ -83,8 +83,8 @@ The left side shows the selected slot, elapsed time, and a data-source badge:
 
 - **Live** means the authenticated BuildLabs REST backend returned one or more
   runs.
-- **Demo** means no runs were available or the backend could not be reached. All
-  sample candidates are visibly labeled.
+- **Unavailable** means no runs were available or the backend could not be
+  reached. The Studio renders no candidate, contract, event, or proof data.
 - **Connecting** means the first REST request is in progress.
 
 ### Monitor layout
@@ -127,7 +127,6 @@ The monitor header contains:
 - a drag handle that communicates the planned draggable-panel behavior;
 - the candidate slot and strategy;
 - the current durable run stage;
-- a Sample badge when demo data is active;
 - inspect, expand, and menu affordances.
 
 The monitor body supports five views.
@@ -142,9 +141,8 @@ existing operator-only endpoint:
 The returned signed Daytona URL is displayed in a sandboxed iframe and can be
 opened as a raw preview. It is never presented as customer-safe proof.
 
-When no live preview is available, the monitor renders the clearly labeled
-Mission Peak Electric sample. The sample is implemented in HTML and CSS so the
-dashboard remains useful without remote image assets.
+When no live preview is available, the monitor renders an explicit unavailable
+state. It never substitutes a sample website for a candidate preview.
 
 ### Code
 
@@ -185,7 +183,6 @@ Each card includes:
 - strategy name;
 - durable run stage;
 - latest durable event summary;
-- Sample label in demo mode;
 - a small preview thumbnail.
 
 The selected candidate has a restrained blue border. Candidate cards do not
@@ -214,7 +211,7 @@ Activity answers “what is each agent doing now?” without relying on neon dot
 - proof attention summary.
 
 For live data, progress bars represent stage position, not an invented
-completion probability. Demo mode is explicitly labeled.
+completion probability. The unavailable state contains no progress data.
 
 ### Contract
 
@@ -264,7 +261,7 @@ The Queue button opens a drawer listing visible runs with:
 - status color;
 - direct candidate selection.
 
-The drawer uses the same live or demo run collection as the main studio.
+The drawer uses the live run collection from the authenticated backend only.
 
 ## Backend connection dialog
 
@@ -300,7 +297,6 @@ tab.
 | `studio/src/styles.css`            | Visual system, monitor mock, desktop/tablet/mobile layouts, and accessibility states. |
 | `studio/src/api.ts`                | REST client and session-scoped connection storage.                                    |
 | `studio/src/types.ts`              | Backend response and frontend state types.                                            |
-| `studio/src/demo.ts`               | Explicit sample candidates, events, and receipts.                                     |
 | `studio/src/main.tsx`              | React entry point.                                                                    |
 | `studio/vite.config.ts`            | `/studio/` build base and local backend proxy.                                        |
 | `src/http/server.ts`               | Studio static serving and authenticated recent-runs REST endpoint.                    |
@@ -313,8 +309,8 @@ tab.
   hook.
 - Transcript contents are excluded from `GET /v1/studio/runs`.
 - Raw mutable Daytona preview URLs remain operator-only.
-- Demo data is always labeled.
+- Unavailable or empty backends render no synthetic build data.
 - The UI never claims a build is proven unless backend evidence and status
   support it.
 - Draft change requests do not auto-apply.
-- No customer PII is introduced into the demo or sent to sandbox endpoints.
+- No customer PII is introduced into the Studio or sent to sandbox endpoints.

@@ -7,6 +7,7 @@ import {
   customerEventFixtures,
   customerFixtureSnapshot,
 } from "../../../../lib/fixtures";
+import { dashboardFixturesEnabled } from "../../../../lib/fixture-mode";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ export const metadata: Metadata = {
 };
 
 export default function CustomerFixturePage() {
-  if (process.env.BUILDLABS_DASHBOARD_FIXTURES !== "1") {
+  if (!dashboardFixturesEnabled()) {
     notFound();
   }
   const snapshot = customerFixtureSnapshot({
