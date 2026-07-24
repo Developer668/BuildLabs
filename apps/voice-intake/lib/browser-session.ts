@@ -390,6 +390,12 @@ async function getProviderSignedUrl(
       parsedSignedUrl.searchParams.has("token") ||
       parsedSignedUrl.searchParams.has("conversation_signature");
     const signedAgent = parsedSignedUrl.searchParams.get("agent_id");
+    // The provider may carry the conversation id in the response body or only
+    // inside the signed URL. Both come from the same authenticated response,
+    // so either is an equally trustworthy binding for this session.
+    const signedConversationId =
+      parsedSignedUrl.searchParams.get("conversation_id") ?? "";
+    const expectedConversationId = conversationId || signedConversationId;
     if (
       parsedSignedUrl.protocol !== "wss:" ||
       parsedSignedUrl.hostname !== "api.elevenlabs.io" ||
@@ -400,11 +406,14 @@ async function getProviderSignedUrl(
       parsedSignedUrl.pathname !== "/v1/convai/conversation" ||
       !hasSignature ||
       (signedAgent !== null && signedAgent !== resource.agentId) ||
-      !CONVERSATION_ID.test(conversationId)
+      !CONVERSATION_ID.test(expectedConversationId)
     ) {
       throw new BrowserSessionError(503, "provider_unavailable");
     }
-    return { signedUrl: parsedSignedUrl.toString(), conversationId };
+    return {
+      signedUrl: parsedSignedUrl.toString(),
+      conversationId: expectedConversationId,
+    };
   } catch (error) {
     if (error instanceof BrowserSessionError) throw error;
     throw new BrowserSessionError(503, "provider_unavailable");

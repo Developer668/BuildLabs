@@ -1,0 +1,75 @@
+# BuildLabs dashboard (Next.js 16) - PUBLIC app.
+#
+#   fly deploy -c fly.dashboard.toml
+#
+# This is the second of the two public origins: the customer project view and
+# the operator studio. It is deliberately a separate origin from the
+# orchestrator. No single-origin edge router is required, because the dashboard
+# proxies the orchestrator server-side and owns the customer session cookie.
+#
+# Stateless: no volume, so deploys can be blue/green.
+#
+# Secrets are NEVER stored in this file. Everything below is non-secret
+# configuration; set credentials with `fly secrets set -a <app> KEY=value`.
+
+app = "buildlabs-dashboard"
+primary_region = "sjc"
+
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  # Built from the repository root because @buildlabs/dashboard is an npm
+  # workspace; this file living at the root makes the root the build context.
+  dockerfile = "apps/dashboard/Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+
+  # Next.js standalone server binding. "::" is dual-stack, so the Fly proxy
+  # reaches the machine over either private address family.
+  HOSTNAME = "::"
+  PORT = "3200"
+
+  NEXT_TELEMETRY_DISABLED = "1"
+  COPILOTKIT_TELEMETRY_DISABLED = "true"
+
+  # Upstreams. Plaintext HTTP is accepted here only because both hostnames are
+  # Fly 6PN private names; see isPrivateServiceHost() in
+  # apps/dashboard/lib/server/orchestration-client.ts.
+  BUILDLABS_ORCHESTRATION_URL = "http://buildlabs-orchestrator.internal:3100"
+  BUILDLABS_BUILD_BACKEND_URL = "http://buildlabs-build-agent.internal:3000"
+
+  # Demo/fixture routes must stay off in production.
+  BUILDLABS_DASHBOARD_FIXTURES = "0"
+
+[http_service]
+  internal_port = 3200
+  force_https = true
+  auto_start_machines = true
+
+  # Keep one machine warm: customers arrive from emailed capability links and
+  # should not pay a cold start. Extra machines may suspend.
+  auto_stop_machines = "suspend"
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 400
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "15s"
+    method = "GET"
+    path = "/healthz"
+
+[deploy]
+  # Stateless and volume-free, so a new version can be brought up and verified
+  # before the old one is retired.
+  strategy = "bluegreen"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"

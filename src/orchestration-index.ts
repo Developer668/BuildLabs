@@ -7,6 +7,7 @@ import type { FastifyInstance } from "fastify";
 
 import { FireworksModel } from "./adapters/fireworks/fireworks-model.js";
 import type { AppConfig } from "./config.js";
+import { formatConfigFailure } from "./lib/config-diagnostics.js";
 import type { ModelPort } from "./ports/index.js";
 import { BraintrustOrchestrationTrace } from "./orchestration/adapters/braintrust/braintrust-orchestration-trace.js";
 import { FlyCliDeploymentAdapter } from "./orchestration/adapters/build/fly-cli-deployment.js";
@@ -190,6 +191,9 @@ export function createOrchestrationRuntime(
     });
     const customerDashboardAccess = new CustomerDashboardAccessCodec({
       publicBaseUrl: config.ORCHESTRATION_PUBLIC_BASE_URL,
+      ...(config.ORCHESTRATION_DASHBOARD_BASE_URL
+        ? { dashboardBaseUrl: config.ORCHESTRATION_DASHBOARD_BASE_URL }
+        : {}),
       secret: Buffer.from(config.ORCHESTRATION_REPLY_SECRET_BASE64),
     });
     const reasoner = new TracedOrchestrationReasoner(
@@ -443,10 +447,15 @@ function isMainModule(): boolean {
 
 if (isMainModule()) {
   void main().catch((error: unknown) => {
-    // Never print configuration errors: they may include secret-bearing input.
+    // Report which variables are wrong, never their values: configuration
+    // input is secret-bearing, so `formatConfigFailure` scrubs every message.
+    const configFailure = formatConfigFailure(error);
     process.stderr.write(
       `General orchestrator failed to start (${errorName(error)})\n`,
     );
+    if (configFailure) {
+      process.stderr.write(`${configFailure}\n`);
+    }
     process.exitCode = 1;
   });
 }

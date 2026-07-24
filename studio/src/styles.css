@@ -2434,7 +2434,7 @@ textarea:focus-visible {
 
 .assistant-input {
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) 36px auto;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
   align-items: center;
   gap: 4px;
   min-height: 52px;
@@ -2481,26 +2481,6 @@ textarea:focus-visible {
 
 .assistant-input textarea::placeholder {
   color: var(--muted-2);
-}
-
-.assistant-voice {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  place-items: center;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--muted-2);
-  cursor: pointer;
-  transition:
-    background 140ms ease,
-    color 140ms ease;
-}
-
-.assistant-voice:hover {
-  background: var(--surface-3);
-  color: var(--text);
 }
 
 .review-button {

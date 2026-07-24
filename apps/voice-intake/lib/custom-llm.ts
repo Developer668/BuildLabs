@@ -803,6 +803,7 @@ function buildFireworksRequest(
     temperature: validated.temperature,
     top_p: validated.topP,
     max_tokens: validated.maximumOutputTokens,
+    reasoning_effort: "none",
     stream: true,
     stream_options: { include_usage: true },
     safe_tokenization: true,

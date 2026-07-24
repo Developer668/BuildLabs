@@ -148,6 +148,13 @@ export interface ElevenLabsAgentAdminPort {
       versionDescription: string;
     },
   ): Promise<unknown>;
+  updateAgentGlobalSettings(
+    agentId: string,
+    input: {
+      name: string;
+      platformSettings: JsonRecord;
+    },
+  ): Promise<unknown>;
   listTools(): Promise<unknown[]>;
   getToolDependents(toolId: string): Promise<unknown>;
   createTool(input: JsonRecord): Promise<unknown>;
@@ -210,7 +217,11 @@ export class ElevenLabsSdkAgentAdmin implements ElevenLabsAgentAdminPort {
       platformSettings: JsonRecord;
     },
   ): Promise<{ createdBranchId: string; createdVersionId: string }> {
-    return this.#client.conversationalAi.agents.branches.create(agentId, input);
+    return this.#client.conversationalAi.agents.branches.create(agentId, {
+      ...input,
+      conversationConfig: providerWireRecord(input.conversationConfig),
+      platformSettings: providerWireRecord(input.platformSettings),
+    });
   }
 
   async updateAgent(
@@ -221,6 +232,16 @@ export class ElevenLabsSdkAgentAdmin implements ElevenLabsAgentAdminPort {
       conversationConfig: JsonRecord;
       platformSettings: JsonRecord;
       versionDescription: string;
+    },
+  ): Promise<unknown> {
+    return this.#client.conversationalAi.agents.update(agentId, input);
+  }
+
+  async updateAgentGlobalSettings(
+    agentId: string,
+    input: {
+      name: string;
+      platformSettings: JsonRecord;
     },
   ): Promise<unknown> {
     return this.#client.conversationalAi.agents.update(agentId, input);
@@ -463,14 +484,10 @@ export class ElevenLabsAgentReconciler {
     } else if (
       digestJson(
         managedProjection(
-          {
-            name: latestRemote.agent.name,
-            conversationConfig: latestRemote.agent.conversationConfig,
-            platformSettings: latestRemote.agent.platformSettings ?? {},
-          },
-          desired.agent,
+          agentVersionedState(latestRemote.agent),
+          agentVersionedState(desired.agent),
         ),
-      ) !== digestJson(desired.agent)
+      ) !== digestJson(agentVersionedState(desired.agent))
     ) {
       await this.#provider.updateAgent(bindings.agentId, {
         branchId,
@@ -478,6 +495,22 @@ export class ElevenLabsAgentReconciler {
         conversationConfig: desired.agent.conversationConfig,
         platformSettings: desired.agent.platformSettings,
         versionDescription: `BuildLabs manifest ${digestJson(this.#manifest).slice(0, 16)}`,
+      });
+    }
+
+    if (
+      digestJson(
+        managedProjection(
+          agentGlobalState(latestRemote.agent),
+          agentGlobalState(desired.agent),
+        ),
+      ) !== digestJson(agentGlobalState(desired.agent))
+    ) {
+      await this.#provider.updateAgentGlobalSettings(bindings.agentId, {
+        name: desired.agent.name,
+        platformSettings: agentGlobalPlatformSettings(
+          desired.agent.platformSettings,
+        ),
       });
     }
 
@@ -672,7 +705,10 @@ export class ElevenLabsAgentReconciler {
     remote: RemoteState,
     bindings: ElevenLabsManifestBindings,
   ) {
-    const desired = buildDesiredWebhook(this.#manifest, bindings);
+    const desired = assertableWebhook(
+      remote.webhook,
+      buildDesiredWebhook(this.#manifest, bindings),
+    );
     const current = remote.webhook
       ? managedProjection(remote.webhook, desired)
       : undefined;
@@ -881,8 +917,12 @@ export function buildDesiredState(
   bindings: ElevenLabsManifestBindings,
   toolIds: Map<string, string>,
 ): DesiredState {
+  const customLlmBasePath = manifest.customLlm.endpoint.replace(
+    /\/chat\/completions$/u,
+    "",
+  );
   const customLlmUrl = new URL(
-    manifest.customLlm.endpoint,
+    customLlmBasePath,
     `${bindings.publicBaseUrl.replace(/\/+$/u, "")}/`,
   ).toString();
   const preCallUrl = new URL(
@@ -961,7 +1001,9 @@ export function buildDesiredState(
                 description: endCall.description,
                 responseTimeoutSecs: endCall.responseTimeoutSeconds,
                 interruptionMode: endCall.interruptionMode,
-                params: {},
+                params: {
+                  systemToolType: "end_call",
+                },
               },
             }
           : {},
@@ -1006,7 +1048,13 @@ export function buildDesiredState(
         agent: {
           firstMessage: false,
           language: false,
-          prompt: false,
+          prompt: {
+            prompt: false,
+            llm: false,
+            toolIds: false,
+            nativeMcpServerIds: false,
+            knowledgeBase: false,
+          },
         },
         tts: { voiceId: false },
       },
@@ -1044,7 +1092,7 @@ export function buildDesiredState(
       webhooks: {
         postCallWebhookId: bindings.webhookId,
         events: ["transcript"],
-        transcriptFormat: "v2",
+        transcriptFormat: "json",
         sendAudio: false,
       },
     },
@@ -1091,6 +1139,22 @@ function buildDesiredWebhook(
   };
 }
 
+// The provider omits `events` from some webhook reads. Assert event
+// subscriptions only when the remote actually reports them: this reconciler
+// never writes the webhook resource, so an unconditional assertion would
+// report permanent drift that no apply could ever repair.
+function assertableWebhook(
+  remote: JsonRecord | undefined,
+  desired: JsonRecord,
+): JsonRecord {
+  if (remote && "events" in remote) {
+    return desired;
+  }
+  return Object.fromEntries(
+    Object.entries(desired).filter(([key]) => key !== "events"),
+  );
+}
+
 function buildDesiredTools(
   manifest: ElevenLabsAgentManifest,
   bindings: ElevenLabsManifestBindings,
@@ -1115,6 +1179,7 @@ function buildDesiredTools(
         dynamicVariable,
         valuePath,
         sanitize: false,
+        preserveNativeType: false,
       }),
     );
     const assignmentResponseProperties = Object.fromEntries(
@@ -1127,7 +1192,13 @@ function buildDesiredTools(
         )
         .map((valuePath) => [
           valuePath,
-          { type: valuePath === "consent" ? "boolean" : "string" },
+          {
+            type: valuePath === "consent" ? "boolean" : "string",
+            description:
+              valuePath === "consent"
+                ? "Controller-validated explicit research-consent state."
+                : "Controller-validated bounded response value.",
+          },
         ]),
     );
     const mockResult = {
@@ -1169,9 +1240,19 @@ function buildDesiredTools(
           responseBodySchema: {
             type: "object",
             properties: {
-              accepted: { type: "boolean" },
-              code: { type: "string" },
-              receipt_digest: { type: "string" },
+              accepted: {
+                type: "boolean",
+                description:
+                  "Whether deterministic controller validation accepted the request.",
+              },
+              code: {
+                type: "string",
+                description: "Bounded machine-readable controller result code.",
+              },
+              receipt_digest: {
+                type: "string",
+                description: "Controller-keyed receipt digest.",
+              },
               ...assignmentResponseProperties,
             },
           },
@@ -1375,7 +1456,7 @@ function buildChanges(
       traffic: 0,
     }),
   });
-  const desiredWebhook = desired.webhook;
+  const desiredWebhook = assertableWebhook(remote.webhook, desired.webhook);
   const currentWebhook = remote.webhook
     ? managedProjection(remote.webhook, desiredWebhook)
     : undefined;
@@ -1464,7 +1545,10 @@ function digestManagedReadback(
       currentLivePercentage: remote.branch?.currentLivePercentage ?? 0,
       versionId,
     },
-    webhook: managedProjection(remote.webhook, desired.webhook),
+    webhook: managedProjection(
+      remote.webhook,
+      assertableWebhook(remote.webhook, desired.webhook),
+    ),
     tools,
     tests,
   });
@@ -1472,7 +1556,12 @@ function digestManagedReadback(
 
 function managedProjection(current: unknown, desired: unknown): unknown {
   if (Array.isArray(desired)) {
-    return current;
+    if (!Array.isArray(current) || current.length !== desired.length) {
+      return current;
+    }
+    return desired.map((value, index) =>
+      managedProjection(current[index], value),
+    );
   }
   if (desired && typeof desired === "object") {
     const currentRecord = record(current);
@@ -1484,6 +1573,41 @@ function managedProjection(current: unknown, desired: unknown): unknown {
     );
   }
   return current;
+}
+
+const GLOBAL_PLATFORM_SETTING_KEYS = ["auth", "privacy", "callLimits"] as const;
+
+function agentGlobalPlatformSettings(platformSettings: JsonRecord): JsonRecord {
+  return Object.fromEntries(
+    GLOBAL_PLATFORM_SETTING_KEYS.flatMap((key) =>
+      key in platformSettings ? [[key, platformSettings[key]]] : [],
+    ),
+  );
+}
+
+function agentGlobalState(agent: {
+  name: string;
+  platformSettings?: JsonRecord | undefined;
+}): JsonRecord {
+  return {
+    name: agent.name,
+    platformSettings: agentGlobalPlatformSettings(agent.platformSettings ?? {}),
+  };
+}
+
+function agentVersionedState(agent: {
+  conversationConfig: JsonRecord;
+  platformSettings?: JsonRecord | undefined;
+}): JsonRecord {
+  const globalKeys = new Set<string>(GLOBAL_PLATFORM_SETTING_KEYS);
+  return {
+    conversationConfig: agent.conversationConfig,
+    platformSettings: Object.fromEntries(
+      Object.entries(agent.platformSettings ?? {}).filter(
+        ([key]) => !globalKeys.has(key),
+      ),
+    ),
+  };
 }
 
 function latestBranchVersion(
@@ -1507,4 +1631,21 @@ function record(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as JsonRecord)
     : {};
+}
+
+function providerWireRecord(value: JsonRecord): JsonRecord {
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [
+      key.replace(/[A-Z]/gu, (character) => `_${character.toLowerCase()}`),
+      Array.isArray(entry)
+        ? (entry as unknown[]).map((item: unknown) =>
+            item && typeof item === "object" && !Array.isArray(item)
+              ? providerWireRecord(item as JsonRecord)
+              : item,
+          )
+        : entry && typeof entry === "object"
+          ? providerWireRecord(entry as JsonRecord)
+          : entry,
+    ]),
+  );
 }

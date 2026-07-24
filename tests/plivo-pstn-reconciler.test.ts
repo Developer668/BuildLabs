@@ -198,7 +198,7 @@ class InMemoryElevenLabs implements ElevenLabsSipAdminPort {
       phoneNumber: input.phoneNumber,
       label: input.label,
       inboundTrunk: {
-        allowedAddresses: [],
+        allowedAddresses: ["0.0.0.0/0"],
         mediaEncryption: "required",
         hasAuthCredentials: false,
         remoteDomains: [],
@@ -237,7 +237,7 @@ class InMemoryElevenLabs implements ElevenLabsSipAdminPort {
         branchId: input.branchId,
       },
       inboundTrunk: {
-        allowedAddresses: [],
+        allowedAddresses: ["0.0.0.0/0"],
         mediaEncryption: "required",
         hasAuthCredentials: false,
         remoteDomains: [],

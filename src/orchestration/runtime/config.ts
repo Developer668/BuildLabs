@@ -32,19 +32,32 @@ const HttpsBaseUrlSchema = HttpsUrlSchema.refine(
     message: "Base URL must not contain a query string or fragment",
   },
 );
+/**
+ * Plaintext HTTP is allowed only where the transport cannot leave the host or
+ * the private network: a loopback address, or a provider-private hostname such
+ * as Fly.io's `*.internal` 6PN names. Everything reachable from the public
+ * internet must be HTTPS.
+ */
+export function isPrivateServiceHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return (
+    new Set(["127.0.0.1", "::1", "[::1]", "localhost"]).has(host) ||
+    host === "internal" ||
+    host.endsWith(".internal")
+  );
+}
+
 const SecureServiceUrlSchema = z.url().refine((value) => {
   const url = new URL(value);
-  const loopback = new Set(["127.0.0.1", "::1", "[::1]", "localhost"]).has(
-    url.hostname,
-  );
   return (
-    (url.protocol === "https:" || (url.protocol === "http:" && loopback)) &&
+    (url.protocol === "https:" ||
+      (url.protocol === "http:" && isPrivateServiceHost(url.hostname))) &&
     url.username.length === 0 &&
     url.password.length === 0 &&
     url.search.length === 0 &&
     url.hash.length === 0
   );
-}, "Service URL must use HTTPS, except for an HTTP loopback address");
+}, "Service URL must use HTTPS, except for a loopback or private (.internal) host");
 const BooleanEnvironmentSchema = z
   .enum(["true", "false"])
   .transform((value) => value === "true");
@@ -88,6 +101,11 @@ const OrchestrationConfigSchema = z
         message: "Sender must be an email address or Name <email> header",
       }),
     ORCHESTRATION_PUBLIC_BASE_URL: HttpsBaseUrlSchema,
+    // Public origin of the customer dashboard. Emailed login capabilities land
+    // here, not on this service: the dashboard owns the customer session cookie
+    // and the opaque project alias. Defaults to the orchestrator's own origin
+    // only so a single-origin deployment behind one proxy still works.
+    ORCHESTRATION_DASHBOARD_BASE_URL: HttpsBaseUrlSchema.optional(),
     ORCHESTRATION_RECONCILE_INTERVAL_MS: z.coerce
       .number()
       .int()

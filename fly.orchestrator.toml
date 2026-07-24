@@ -1,0 +1,154 @@
+# BuildLabs general orchestrator - PUBLIC app.
+#
+#   fly deploy -c fly.orchestrator.toml
+#
+# This is one of the two public origins. Stripe and Resend post webhooks to
+#   {ORCHESTRATION_PUBLIC_BASE_URL}/v1/orchestration/webhooks/stripe
+#   {ORCHESTRATION_PUBLIC_BASE_URL}/v1/orchestration/webhooks/resend
+# so the app must keep a stable HTTPS origin and must never scale to zero.
+#
+# This app is also the SOLE holder of FLY_ACCESS_TOKEN. It deploys proven
+# customer projects with flyctl; that credential must never be set on the
+# build-agent app and must never reach a Daytona sandbox.
+#
+# Secrets are NEVER stored in this file. Everything below is non-secret
+# configuration; set credentials with `fly secrets set -a <app> KEY=value`.
+# See docs/DEPLOYMENT.md for the full list.
+
+app = "buildlabs-orchestrator"
+primary_region = "sjc"
+
+# The runtime drains in-flight provider effects on SIGTERM within
+# ORCHESTRATION_SHUTDOWN_TIMEOUT_MS (30s), so give it a little more than that.
+kill_signal = "SIGTERM"
+kill_timeout = "45s"
+
+# A little swap keeps flyctl subprocesses and artifact extraction from OOMing
+# a 1GB machine.
+swap_size_mb = 512
+
+[build]
+  dockerfile = "Dockerfile"
+
+[processes]
+  # Overrides the image CMD. The same image also contains dist/index.js
+  # (build agent) and dist/production-index.js (single-host supervisor).
+  app = "node dist/orchestration-index.js"
+
+# SQLite state must survive machine replacement. One machine owns this volume;
+# do not scale this app past a single machine per region.
+[mounts]
+  source = "buildlabs_orchestration_data"
+  destination = "/data"
+  initial_size = "3gb"
+
+[env]
+  NODE_ENV = "production"
+
+  # Bind every interface. "::" is dual-stack, so the Fly proxy reaches the
+  # machine whether it connects over the private IPv6 6PN address or IPv4.
+  ORCHESTRATION_HOST = "::"
+  ORCHESTRATION_PORT = "3100"
+  ORCHESTRATION_DATABASE_PATH = "/data/orchestration.db"
+  ORCHESTRATION_ARTIFACT_TEMP_DIRECTORY = "/data/tmp"
+
+  # The build agent is private: it has no public IP and is reachable only over
+  # Fly's 6PN network. See fly.build-agent.toml. Plaintext HTTP is accepted
+  # here only because *.internal is a private host - see isPrivateServiceHost()
+  # in src/orchestration/runtime/config.ts. Anything publicly routable must be
+  # HTTPS, and the build agent must never be made publicly routable.
+  BUILD_BACKEND_BASE_URL = "http://buildlabs-build-agent.internal:3000"
+  BUILD_BACKEND_REQUEST_TIMEOUT_MS = "30000"
+  BUILD_BACKEND_PREVIEW_TIMEOUT_MS = "360000"
+  BUILD_BACKEND_ARTIFACT_TIMEOUT_MS = "600000"
+
+  ORCHESTRATION_RECONCILE_INTERVAL_MS = "10000"
+  ORCHESTRATION_RECONCILE_BATCH_SIZE = "25"
+  ORCHESTRATION_RECONCILE_CONCURRENCY = "4"
+  ORCHESTRATION_PROJECT_RECONCILE_TIMEOUT_MS = "1920000"
+  ORCHESTRATION_TRACE_FLUSH_TIMEOUT_MS = "10000"
+  ORCHESTRATION_EFFECT_MAX_ATTEMPTS = "5"
+  ORCHESTRATION_EFFECT_RETRY_INITIAL_MS = "1000"
+  ORCHESTRATION_EFFECT_RETRY_MAX_MS = "60000"
+  ORCHESTRATION_BUILD_DEADLINE_MS = "7200000"
+  ORCHESTRATION_PROOF_EVENT_GRACE_MS = "120000"
+  ORCHESTRATION_MAIL_DELIVERY_DEADLINE_MS = "21600000"
+  ORCHESTRATION_SHUTDOWN_TIMEOUT_MS = "30000"
+  ORCHESTRATION_PREVIEW_TTL_SECONDS = "172800"
+  ORCHESTRATION_PREVIEW_REVIEW_PERIOD_MS = "86400000"
+
+  FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1"
+  FIREWORKS_MODEL = "accounts/fireworks/models/glm-5p2"
+  BRAINTRUST_API_URL = "https://api.braintrust.dev"
+  BRAINTRUST_APP_URL = "https://www.braintrust.dev"
+  BRAINTRUST_PROJECT_NAME = "BuildLabs"
+  STRIPE_PRODUCT_NAME = "BuildLabs software engagement"
+  DAYTONA_BUILD_SNAPSHOT = "buildlabs-dind-browser-v2"
+
+  # Production refuses test-mode Stripe (src/orchestration/runtime/config.ts).
+  STRIPE_EXPECTED_LIVEMODE = "true"
+
+  FLYCTL_BIN = "flyctl"
+  FLY_APP_NAME_PREFIX = "buildlabs"
+  FLY_PRIMARY_REGION = "sjc"
+  FLY_HEALTH_PATH = "/"
+  FLY_OPERATION_TIMEOUT_MS = "1200000"
+
+  # ---------------------------------------------------------------------
+  # Deployment-specific, non-secret, and REQUIRED. Uncomment and set real
+  # values before the first deploy; production config validation rejects
+  # placeholder/reserved hostnames and the process will refuse to boot.
+  # ---------------------------------------------------------------------
+  # ORCHESTRATION_PUBLIC_BASE_URL = "https://buildlabs-orchestrator.fly.dev"
+  #
+  # Emailed customer login capabilities must land on the dashboard origin,
+  # which owns the customer session cookie. Without this the orchestrator
+  # falls back to its own origin and customer links break.
+  # ORCHESTRATION_DASHBOARD_BASE_URL = "https://buildlabs-dashboard.fly.dev"
+  #
+  # Real Resend receiving/sending identities.
+  # ORCHESTRATION_REPLY_DOMAIN = "reply.example.com"
+  # ORCHESTRATION_FROM_EMAIL = "BuildLabs <hello@example.com>"
+  #
+  # Stripe Checkout return routes, served by the dashboard.
+  # STRIPE_SUCCESS_URL = "https://buildlabs-dashboard.fly.dev/checkout/success"
+  # STRIPE_CANCEL_URL = "https://buildlabs-dashboard.fly.dev/checkout/cancel"
+  #
+  # Org-scoped deploy target for generated customer apps.
+  # FLY_ORG_SLUG = "your-org"
+
+[http_service]
+  internal_port = 3100
+  force_https = true
+  auto_start_machines = true
+
+  # Never suspend a webhook receiver: Stripe and Resend retries plus the
+  # background reconciliation worker both require a machine that is always up.
+  auto_stop_machines = "off"
+  min_machines_running = 1
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 50
+    hard_limit = 100
+
+  [[http_service.checks]]
+    # A colleague is landing an unauthenticated GET /health on this service.
+    # /ready is intentionally not used here: it probes every provider, so a
+    # third-party outage would take the webhook receiver out of rotation.
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "20s"
+    method = "GET"
+    path = "/health"
+
+[deploy]
+  # Blue/green is unavailable for apps with mounted volumes, and only one
+  # machine may own the SQLite file, so deploys roll a single machine.
+  # The SQLite stores apply their own schema at startup; no release_command.
+  strategy = "rolling"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"

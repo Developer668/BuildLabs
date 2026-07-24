@@ -415,7 +415,7 @@ describe("HTTP server", () => {
     });
   });
 
-  it("fails sponsor-complete readiness when ElevenLabs is unconfigured", async () => {
+  it("stays ready without ElevenLabs, which is an optional sponsor", async () => {
     const config = loadConfig({
       NODE_ENV: "test",
       BUILDLABS_INTERNAL_TOKEN: token,
@@ -442,13 +442,15 @@ describe("HTTP server", () => {
     });
 
     try {
+      // Voice is optional in configuration, so an install without it must still
+      // become ready — otherwise a deployment health check can never pass.
       const ready = await withoutSpeechEngine.inject({
         method: "GET",
         url: "/ready",
       });
-      expect(ready.statusCode).toBe(503);
+      expect(ready.statusCode).toBe(200);
       expect(ready.json()).toMatchObject({
-        status: "not_ready",
+        status: "ready",
         providers: { elevenlabs: "unconfigured" },
       });
 
@@ -457,9 +459,9 @@ describe("HTTP server", () => {
         url: "/v1/integrations/probe",
         headers: { authorization: `Bearer ${token}` },
       });
-      expect(probe.statusCode).toBe(503);
+      expect(probe.statusCode).toBe(200);
       expect(probe.json()).toMatchObject({
-        status: "not_ready",
+        status: "ready",
         providers: {
           daytona: "healthy",
           fireworks: "healthy",

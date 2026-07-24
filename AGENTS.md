@@ -107,12 +107,15 @@ and testing environment. An authenticated pre-call webhook mints the same
 conversation-bound tool capability as browser voice. Plivo does not record,
 transcribe, originate calls, or own a second archive.
 
-The dashboard slice is not production-complete: the Next.js/CopilotKit UI, SSE,
-customer-renderable raster WIP gateway, server-side session revocation/logout
-and renewal, a generic email-entry link request, deployment-wide rate limiting,
-opaque customer aliases, and provider-backed end-to-end verification remain
-open. Provider-backed runs also require configured Stripe, Resend, Fly.io, and
-sponsor accounts.
+The dashboard slice is implemented but not production-complete: the
+Next.js/CopilotKit operator and customer UI, resumable SSE, and opaque customer
+aliases exist (`apps/dashboard`). Still open are the customer-renderable raster
+WIP gateway's producer side (the dashboard sanitizes and serves frames but
+nothing in `src/` emits a `sanitizationPolicyDigest`), server-side session
+revocation/logout and renewal, a generic email-entry link request,
+deployment-wide rate limiting, and provider-backed end-to-end verification.
+Provider-backed runs also require configured Stripe, Resend, Fly.io, and sponsor
+accounts.
 The build backend does not inject a controller-attested acceptance-test bundle:
 candidate-owned tests are build evidence, while hard contract proof comes from
 explicit controller-issued command or rendered-HTTP verifier receipts.

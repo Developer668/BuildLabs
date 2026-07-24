@@ -158,6 +158,14 @@ export interface AcceptIntakeRequest {
   trustedSenderEmail?: string;
   researchConsent: boolean;
   provider?: string;
+  /**
+   * Return as soon as the intake is durably recorded, leaving reasoning and the
+   * first customer mail to the reconciliation worker. Callers on a request
+   * deadline — the voice post-call bridge in particular — cannot wait for a
+   * model turn, and `intake_received` is a reconcilable checkpoint, so the work
+   * still completes exactly once.
+   */
+  deferAnalysis?: boolean;
 }
 
 export interface VerifyEmailOwnershipRequest {
@@ -430,7 +438,12 @@ export class OrchestrationAgent {
       customer,
     });
     if (!created.created) {
-      return this.reconcileProject(created.project.projectId, signal);
+      return input.deferAnalysis
+        ? created.project
+        : this.reconcileProject(created.project.projectId, signal);
+    }
+    if (input.deferAnalysis) {
+      return created.project;
     }
     return this.#runWithEffectFailure(
       created.project.projectId,

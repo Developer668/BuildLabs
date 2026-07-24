@@ -400,7 +400,11 @@ export function createOrchestrationHttpServer(
     }
   };
 
-  server.get("/health", { preHandler: requireInternal }, () => ({
+  // Unauthenticated liveness, matching the build backend. A container platform
+  // health check cannot present the internal token, and this reveals nothing
+  // beyond the fact that the process is up. Readiness stays authenticated
+  // because it reports per-provider configuration state.
+  server.get("/health", () => ({
     status: "ok",
     component: "general-orchestrator",
   }));
@@ -457,7 +461,13 @@ export function createOrchestrationHttpServer(
         requiredHeader(request, "idempotency-key"),
       );
       const body = IntakeBodySchema.parse(parseInternalJson(request.body));
+      // Record the intake and answer immediately. Reasoning and the first
+      // customer mail run in the reconciliation worker: callers here are on a
+      // short request deadline (the voice post-call bridge allows seconds, and
+      // a model turn takes tens of seconds), while `intake_received` is a
+      // durable, reconcilable checkpoint.
       const result = await options.controller.acceptIntake({
+        deferAnalysis: true,
         idempotencyKey,
         ...(body.projectId ? { projectId: body.projectId } : {}),
         channel: body.channel,

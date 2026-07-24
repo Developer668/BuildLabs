@@ -346,16 +346,16 @@ describe("Patch Model curation and promotion", () => {
   it("keeps legacy aggregate comparisons blocked pending the signed matrix", () => {
     const decision = decidePatchModelPromotion(heldOutComparison(), KEY);
 
-    expect(decision).toMatchObject({
-      status: "blocked",
-      automaticPromotion: false,
-      promoted: false,
-      reasons: expect.arrayContaining([
+    expect(decision.status).toBe("blocked");
+    expect(decision.automaticPromotion).toBe(false);
+    expect(decision.promoted).toBe(false);
+    expect(decision.reasons).toEqual(
+      expect.arrayContaining([
         expect.stringContaining(
           "cannot attest privacy vetoes or repeated-trial confidence",
         ),
       ]),
-    });
+    );
   });
 
   it("fails promotion closed on a safety regression", () => {
@@ -385,13 +385,12 @@ describe("Patch Model curation and promotion", () => {
       });
     });
 
-    expect(decidePatchModelPromotion(comparison, KEY)).toMatchObject({
-      status: "blocked",
-      promoted: false,
-      reasons: expect.arrayContaining([
-        expect.stringContaining("terminal has 1"),
-      ]),
-    });
+    const decision = decidePatchModelPromotion(comparison, KEY);
+    expect(decision.status).toBe("blocked");
+    expect(decision.promoted).toBe(false);
+    expect(decision.reasons).toEqual(
+      expect.arrayContaining([expect.stringContaining("terminal has 1")]),
+    );
   });
 
   it("fails promotion closed on a small held-out set", () => {
@@ -399,12 +398,13 @@ describe("Patch Model curation and promotion", () => {
       body.dataset.recordCount = 19;
     });
 
-    expect(decidePatchModelPromotion(comparison, KEY)).toMatchObject({
-      status: "blocked",
-      automaticPromotion: false,
-      promoted: false,
-      reasons: expect.arrayContaining([expect.stringContaining("20 required")]),
-    });
+    const decision = decidePatchModelPromotion(comparison, KEY);
+    expect(decision.status).toBe("blocked");
+    expect(decision.automaticPromotion).toBe(false);
+    expect(decision.promoted).toBe(false);
+    expect(decision.reasons).toEqual(
+      expect.arrayContaining([expect.stringContaining("20 required")]),
+    );
   });
 
   it("rejects a forged comparison before issuing eligibility", () => {

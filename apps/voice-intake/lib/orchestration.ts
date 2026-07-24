@@ -92,7 +92,9 @@ export async function forwardVoiceIntake(input: {
     },
     body: JSON.stringify(body),
     cache: "no-store",
-    signal: AbortSignal.timeout(15_000),
+    // The orchestrator records the intake and answers without waiting for a
+    // model turn, so this only has to cover a write and the network.
+    signal: AbortSignal.timeout(10_000),
   });
   if (!response.ok) {
     throw new Error(`The BuildLabs orchestrator returned ${response.status}.`);

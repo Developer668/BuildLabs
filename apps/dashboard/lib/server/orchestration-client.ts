@@ -30,20 +30,34 @@ export function orchestrationBaseUrl(): URL {
   } catch {
     throw unconfigured();
   }
-  const loopback =
-    url.hostname === "127.0.0.1" ||
-    url.hostname === "::1" ||
-    url.hostname === "localhost";
   if (
     url.username !== "" ||
     url.password !== "" ||
     url.search !== "" ||
     url.hash !== "" ||
-    (url.protocol !== "https:" && !(url.protocol === "http:" && loopback))
+    (url.protocol !== "https:" &&
+      !(url.protocol === "http:" && isPrivateServiceHost(url.hostname)))
   ) {
     throw unconfigured();
   }
   return url;
+}
+
+/**
+ * Plaintext HTTP is allowed only where the transport cannot leave the host or
+ * the private network: a loopback address, or a provider-private hostname such
+ * as Fly.io's `*.internal` 6PN names. Anything publicly routable must be HTTPS.
+ */
+export function isPrivateServiceHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return (
+    host === "127.0.0.1" ||
+    host === "::1" ||
+    host === "[::1]" ||
+    host === "localhost" ||
+    host === "internal" ||
+    host.endsWith(".internal")
+  );
 }
 
 export function orchestrationUrl(

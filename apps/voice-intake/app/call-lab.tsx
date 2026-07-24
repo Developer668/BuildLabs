@@ -3,8 +3,6 @@
 import { AudioLines, ChevronDown, RefreshCw, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { BrowserVoicePanel } from "./browser-voice-panel";
-
 type TranscriptTurn = {
   role: "agent" | "user";
   message: string;
@@ -66,7 +64,6 @@ export function CallLab() {
     accessConfigured: false,
     accessRequired: true,
   });
-  const [configLoaded, setConfigLoaded] = useState(false);
   const [accessCode, setAccessCode] = useState("");
   const [calls, setCalls] = useState<CallRecord[]>([]);
   const [loading, setLoading] = useState(false);
@@ -138,7 +135,6 @@ export function CallLab() {
       .then(async (response) => (await response.json()) as PublicConfig)
       .then((nextConfig) => {
         setConfig(nextConfig);
-        setConfigLoaded(true);
         if (!nextConfig.agentConfigured) {
           setMessage("ElevenLabs voice archive access is not configured.");
         } else if (!nextConfig.accessConfigured) {
@@ -149,7 +145,7 @@ export function CallLab() {
           void loadCalls(false, "", true);
         }
       })
-      .catch(() => setConfigLoaded(true));
+      .catch(() => undefined);
   }, [loadCalls]);
 
   return (
@@ -159,8 +155,8 @@ export function CallLab() {
           <p className="eyebrow">BUILDLABS VOICE</p>
           <h1>Voice intake</h1>
           <p className="description">
-            Talk through the software you need, then review provider-complete
-            sessions in the operator archive.
+            Customers describe the software they need by phone. Review
+            provider-complete intake sessions in the operator archive.
           </p>
         </div>
         <button
@@ -178,10 +174,6 @@ export function CallLab() {
           <span>{loading ? "Refreshing" : "Refresh"}</span>
         </button>
       </header>
-
-      <BrowserVoicePanel
-        configured={configLoaded ? config.browserConfigured : null}
-      />
 
       <section className="connectionPanel">
         <div className="connectionIcon">

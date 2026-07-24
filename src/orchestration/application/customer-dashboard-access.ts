@@ -8,7 +8,15 @@ const EMAIL_MAX_LENGTH = 320;
 const TOKEN_PATTERN =
   /^(login|session)\.v1\.([A-Za-z0-9_-]{1,768})\.([A-Za-z0-9_-]{32})$/;
 const CSRF_TOKEN_PATTERN = /^csrf\.v1\.([A-Za-z0-9_-]{43})$/;
-const ACCESS_PATH = "v1/orchestration/customer-dashboard/access";
+/**
+ * Where an emailed login capability actually lands. The customer session lives
+ * on the dashboard origin: the dashboard exchanges the token with this service,
+ * rewrites the session cookie onto its own origin, and swaps the internal
+ * project id for an opaque alias. Pointing the mail at this service's own
+ * exchange path instead would dead-end, because the redirect target
+ * (`/dashboard/projects/...`) is a dashboard route this service does not serve.
+ */
+const DASHBOARD_ACCESS_PATH = "v1/customer/access";
 const MIN_TTL_SECONDS = 60;
 const MAX_LOGIN_TTL_SECONDS = 7 * 24 * 60 * 60;
 const MAX_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
@@ -43,6 +51,11 @@ export type CustomerDashboardGrant = z.infer<typeof DashboardGrantSchema>;
 
 export interface CustomerDashboardAccessCodecOptions {
   publicBaseUrl: string;
+  /**
+   * Public HTTPS origin of the customer dashboard. Emailed login links target
+   * it; omit only in tests that never create a login link.
+   */
+  dashboardBaseUrl?: string;
   secret: Buffer;
   now?: () => Date;
   loginTtlSeconds?: number;
@@ -68,7 +81,7 @@ export class InvalidCustomerDashboardAccessError extends Error {
 }
 
 export class CustomerDashboardAccessCodec {
-  readonly #publicBaseUrl: URL;
+  readonly #dashboardBaseUrl: URL;
   readonly #loginSigningKey: Buffer;
   readonly #sessionSigningKey: Buffer;
   readonly #now: () => Date;
@@ -76,7 +89,12 @@ export class CustomerDashboardAccessCodec {
   readonly #sessionTtlSeconds: number;
 
   constructor(options: CustomerDashboardAccessCodecOptions) {
-    this.#publicBaseUrl = parsePublicBaseUrl(options.publicBaseUrl);
+    // Validate the orchestrator origin even though links now target the
+    // dashboard: a malformed public base URL is still a configuration error.
+    parsePublicBaseUrl(options.publicBaseUrl);
+    this.#dashboardBaseUrl = parsePublicBaseUrl(
+      options.dashboardBaseUrl ?? options.publicBaseUrl,
+    );
     if (
       !Buffer.isBuffer(options.secret) ||
       options.secret.length < 32 ||
@@ -133,7 +151,7 @@ export class CustomerDashboardAccessCodec {
       nonce: input.nonce ?? `login-${randomBytes(18).toString("base64url")}`,
     });
     const token = this.#encode(grant);
-    const url = new URL(ACCESS_PATH, this.#publicBaseUrl);
+    const url = new URL(DASHBOARD_ACCESS_PATH, this.#dashboardBaseUrl);
     url.hash = new URLSearchParams({ token }).toString();
     return url.href;
   }

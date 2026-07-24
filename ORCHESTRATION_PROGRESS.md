@@ -23,7 +23,7 @@ deterministic code alone confirms payment, proof, deployment, and delivery.
 | Bounded access-link reissue            | Backend complete            | Generic `POST .../access/requests` accepts only a signed active or at-most-30-days-expired fragment capability, rechecks protected project/email identity, mails only the stored address, applies a durable one-minute per-project send floor, and rotates unsent 15-minute capability generations.            |
 | Customer dashboard REST + steering     | Backend complete            | Project/email-bound project and bounded event reads plus session-derived double-submit CSRF, stable idempotency key, expected revision/proposal coordinates, and shared-orchestrator steering are implemented under `/v1/orchestration/customer-dashboard/...`.                                                |
 | Sanitized build observation            | Backend complete            | Internal per-run observation exposes allowlisted status/stage/slot/tool/proof/timeline fields; raw Daytona surfaces and logs never cross it, and the schema remains explicitly `customerRenderable: false`.                                                                                                    |
-| Customer dashboard UI + live visual    | Open                        | Next.js/CopilotKit frontend, typed-email public link request, resumable SSE, opaque aliases, and the controller-rendered raster WIP gateway are not implemented. Server-side session revocation/logout/renewal and edge-wide dashboard rate limits also remain open.                                           |
+| Customer dashboard UI + live visual    | UI complete; producer open  | Next.js/CopilotKit workspace, opaque aliases, and resumable `Last-Event-ID` SSE ship in `apps/dashboard`; the raster gateway has a consumer but no producer. Typed-email requests, server-side revocation/renewal, and edge rate limits stay open. See the audit below.                                        |
 | Provider-backed dashboard E2E          | Pending                     | Real Resend link delivery/consumption, browser session, live project read, steering revision, build observation, proven preview, and production handoff have not yet been verified together with configured providers.                                                                                         |
 | Secure email-thread routing            | Complete                    | Opaque HMAC-protected project reply addresses reject tampering/wrong domains (2 tests).                                                                                                                                                                                                                        |
 | Sourced proposal versions              | Complete                    | Fireworks plans bind to exact intake/research evidence, quote, contract, strategies, and immutable digests (2 tests).                                                                                                                                                                                          |
@@ -50,7 +50,7 @@ deterministic code alone confirms payment, proof, deployment, and delivery.
 | Provider readiness                     | Code complete; live pending | Read-only probes cover all providers, webhook registrations, backend identity, and snapshot; credential smoke awaits API keys.                                                                                                                                                                                 |
 | Production startup                     | Complete                    | One supervisor starts/stops both backends; individual service commands remain available.                                                                                                                                                                                                                       |
 | Integrated repository suite            | Complete                    | `npm run check` passes formatting, lint, strict typecheck, production build, coverage thresholds, 56 test files, and 676 tests.                                                                                                                                                                                |
-| Docs + GitHub handoff                  | Documentation updated       | README, product/dashboard/runtime, and progress documents distinguish the implemented backend slice from the pending frontend, stream, raster gateway, session operations, aliases, and provider-backed E2E.                                                                                                   |
+| Docs + GitHub handoff                  | Documentation updated       | README, CLAUDE, product/dashboard/runtime, and progress documents describe all four services (build backend, orchestrator, dashboard, voice intake) and distinguish the implemented slices from the pending WIP frame producer, session operations, and provider-backed E2E.                                   |
 | Transactional provider inbox           | Complete                    | Verified inbox receipt + aggregate CAS commit/rollback are atomic; duplicate/conflict and lifecycle integration pass.                                                                                                                                                                                          |
 | Bounded effect recovery                | Complete                    | Persisted exponential retry, capped attempts, safe errors, stable idempotency, and dead-letter/operator-attention paths pass focused tests.                                                                                                                                                                    |
 | Preview delivery gate                  | Complete                    | Lost Resend webhooks reconcile through authoritative provider status; deployment waits for actual preview delivery and starts its review clock there.                                                                                                                                                          |
@@ -93,10 +93,27 @@ deterministic code alone confirms payment, proof, deployment, and delivery.
 - Customer dashboard reads and steering: **backend complete** for project
   snapshot, bounded REST events, safe build-observation join, last-known-good
   preview/production retention, and CSRF/idempotency/version-bound steering.
-- Customer dashboard experience: **open** for the Next.js/CopilotKit frontend,
-  typed-email public link request, SSE, opaque aliases, customer-renderable
-  raster WIP gateway, server-side session revocation/logout/renewal, and
-  edge-wide dashboard rate limits.
+- Customer dashboard experience: **complete** for the Next.js/CopilotKit
+  frontend (`apps/dashboard/app/dashboard/projects/[projectAlias]`,
+  `app/api/copilotkit/*`), opaque `prj_`/`bld_`/`frm_` aliases sealed into a
+  session-bound cookie (`apps/dashboard/lib/server/aliases.ts`), and resumable
+  `Last-Event-ID` SSE that fans the orchestrator's bounded event window out as
+  `text/event-stream` (`apps/dashboard/lib/server/customer-stream.ts` with
+  `apps/dashboard/components/use-customer-project.ts`; 9 focused tests in
+  `apps/dashboard/tests/customer-sse.test.ts`).
+- Customer-renderable raster WIP gateway: **consumer only**. The dashboard
+  accepts, sanitizes to a blurred layout-only PNG, watermarks, and serves frames
+  (`apps/dashboard/lib/server/wip-raster.ts`), but every ingest requires a
+  `sanitizationPolicyDigest` plus an HMAC sanitization receipt, and **nothing in
+  `src/` produces one** — no builder or controller captures or attests a frame.
+  The build backend's projection is still schema-pinned to
+  `customerRenderable: false`, so no customer can receive a frame today. The
+  producer side is the remaining work.
+- Remaining dashboard gaps: **open** for the typed-email public link request (no
+  email-entry surface exists), server-side session revocation and renewal —
+  logout clears the dashboard-origin cookies and projection state but returns
+  `globalRevocation: false`, leaving the orchestrator-signed session valid until
+  it expires — and edge-wide dashboard rate limits.
 - Caller-provided, consented own-business URL research with citations:
   **complete for explicitly owned/authorized URLs; findings stay provisional
   until customer-confirmed; business-name discovery/assets remain open**
@@ -124,7 +141,9 @@ deterministic code alone confirms payment, proof, deployment, and delivery.
 
 Safety decision: raw work-in-progress Daytona builds remain operator-only. An
 authenticated customer may receive only the implemented, allowlisted structured
-observation, currently with `customerRenderable: false`, until the separate
-watermarked raster gateway exists. Customer review links remain frozen proven
-revisions; every requested edit creates a new contract revision and must pass
-the complete proof gate again.
+observation, currently with `customerRenderable: false`. The dashboard can
+already serve watermarked, layout-only raster frames, but only for frames posted
+through its attested internal ingest; until a builder-side producer exists, no
+frame is ever available and the customer surface stays non-renderable. Customer
+review links remain frozen proven revisions; every requested edit creates a new
+contract revision and must pass the complete proof gate again.

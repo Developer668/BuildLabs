@@ -38,6 +38,10 @@ class InMemoryElevenLabsAdmin implements ElevenLabsAgentAdminPort {
     agentId: string;
     input: Parameters<ElevenLabsAgentAdminPort["updateAgent"]>[1];
   }> = [];
+  readonly updateAgentGlobalSettingsCalls: Array<{
+    agentId: string;
+    input: Parameters<ElevenLabsAgentAdminPort["updateAgentGlobalSettings"]>[1];
+  }> = [];
   readonly createToolCalls: JsonRecord[] = [];
   readonly updateToolCalls: Array<{ id: string; input: JsonRecord }> = [];
   readonly createTestCalls: JsonRecord[] = [];
@@ -49,7 +53,6 @@ class InMemoryElevenLabsAdmin implements ElevenLabsAgentAdminPort {
       authType: "hmac",
       isDisabled: false,
       isAutoDisabled: false,
-      events: ["post_call_transcription"],
     },
   ];
   readonly tools = new Map<
@@ -106,6 +109,7 @@ class InMemoryElevenLabsAdmin implements ElevenLabsAgentAdminPort {
     return (
       this.createBranchCalls.length +
       this.updateAgentCalls.length +
+      this.updateAgentGlobalSettingsCalls.length +
       this.createToolCalls.length +
       this.updateToolCalls.length +
       this.createTestCalls.length +
@@ -205,6 +209,29 @@ class InMemoryElevenLabsAdmin implements ElevenLabsAgentAdminPort {
     };
     this.#branch.versionId = "version_buildlabs_dev_0002";
     return Promise.resolve({ versionId: this.#branch.versionId });
+  }
+
+  updateAgentGlobalSettings(
+    agentId: string,
+    input: Parameters<ElevenLabsAgentAdminPort["updateAgentGlobalSettings"]>[1],
+  ): Promise<unknown> {
+    this.updateAgentGlobalSettingsCalls.push({
+      agentId,
+      input: structuredClone(input),
+    });
+    this.#mainAgent.name = input.name;
+    this.#mainAgent.platformSettings = {
+      ...this.#mainAgent.platformSettings,
+      ...structuredClone(input.platformSettings),
+    };
+    if (this.#branch) {
+      this.#branch.agent.name = input.name;
+      this.#branch.agent.platformSettings = {
+        ...this.#branch.agent.platformSettings,
+        ...structuredClone(input.platformSettings),
+      };
+    }
+    return Promise.resolve({});
   }
 
   listTools(): Promise<unknown[]> {
@@ -434,6 +461,17 @@ describe("ElevenLabs agent reconciliation", () => {
     expect(provider.createBranchCalls[0]?.input).not.toHaveProperty(
       "productionTrafficPercent",
     );
+    expect(
+      provider.createBranchCalls[0]?.input.conversationConfig,
+    ).toMatchObject({
+      agent: {
+        prompt: {
+          customLlm: {
+            url: "https://voice.buildlabs.example/api/llm/v1",
+          },
+        },
+      },
+    });
     expect(provider.createBranchCalls[0]?.input.platformSettings).toMatchObject(
       {
         overrides: {
@@ -441,7 +479,13 @@ describe("ElevenLabs agent reconciliation", () => {
             agent: {
               firstMessage: false,
               language: false,
-              prompt: false,
+              prompt: {
+                prompt: false,
+                llm: false,
+                toolIds: false,
+                nativeMcpServerIds: false,
+                knowledgeBase: false,
+              },
             },
             tts: { voiceId: false },
           },
@@ -527,7 +571,7 @@ describe("ElevenLabs agent reconciliation", () => {
     expect(provider.webhooks).toHaveLength(0);
   });
 
-  it("requires exact HMAC webhook URL, status, and transcription subscription", async () => {
+  it("requires exact HMAC webhook URL and status", async () => {
     const mutations: Array<(webhook: JsonRecord) => void> = [
       (webhook) => {
         webhook.authType = "basic";
@@ -540,9 +584,6 @@ describe("ElevenLabs agent reconciliation", () => {
       },
       (webhook) => {
         webhook.webhookUrl = "https://voice.buildlabs.example/wrong";
-      },
-      (webhook) => {
-        webhook.events = [];
       },
     ];
 
@@ -566,6 +607,49 @@ describe("ElevenLabs agent reconciliation", () => {
       });
       expect(provider.mutationCount).toBe(0);
     }
+  });
+
+  it("asserts webhook event subscriptions only when the provider reports them", async () => {
+    // A read that omits `events` must not read as drift: this reconciler never
+    // writes the webhook resource, so that drift could never be repaired.
+    const silent = new InMemoryElevenLabsAdmin();
+    const silentWebhook = silent.webhooks[0];
+    if (!silentWebhook) throw new Error("Missing webhook test fixture");
+    expect(silentWebhook.events).toBeUndefined();
+    expect(
+      (await new ElevenLabsAgentReconciler(silent).plan(BINDINGS)).changes,
+    ).toContainEqual(
+      expect.objectContaining({ resource: "webhook", action: "none" }),
+    );
+
+    // A read that reports the exact manifest subscription is also clean.
+    const matching = new InMemoryElevenLabsAdmin();
+    const matchingWebhook = matching.webhooks[0];
+    if (!matchingWebhook) throw new Error("Missing webhook test fixture");
+    matchingWebhook.events = ["post_call_transcription"];
+    expect(
+      (await new ElevenLabsAgentReconciler(matching).plan(BINDINGS)).changes,
+    ).toContainEqual(
+      expect.objectContaining({ resource: "webhook", action: "none" }),
+    );
+  });
+
+  it("detects webhook event drift when the provider reports the wrong subscription", async () => {
+    const provider = new InMemoryElevenLabsAdmin();
+    const webhook = provider.webhooks[0];
+    if (!webhook) throw new Error("Missing webhook test fixture");
+    webhook.events = ["post_call_audio"];
+
+    const reconciler = new ElevenLabsAgentReconciler(provider);
+    expect((await reconciler.plan(BINDINGS)).changes).toContainEqual(
+      expect.objectContaining({ resource: "webhook", action: "update" }),
+    );
+    await expect(
+      reconciler.apply(BINDINGS, MAIN_VERSION),
+    ).rejects.toMatchObject({
+      name: "ElevenLabsWebhookDriftError",
+    });
+    expect(provider.mutationCount).toBe(0);
   });
 
   it("fails a complete readback when a created test is normalized incorrectly", async () => {

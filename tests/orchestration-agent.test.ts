@@ -226,7 +226,7 @@ describe("OrchestrationAgent proposal/payment/build lifecycle", () => {
       request.subject.includes("Build dashboard"),
     );
     expect(dashboardMail?.text).toContain(
-      "/v1/orchestration/customer-dashboard/access#token=login.v1.",
+      "/v1/customer/access#token=login.v1.",
     );
     const dashboardLink = dashboardMail?.text.match(/https:\/\/\S+/u)?.[0];
     expect(dashboardLink).toBeDefined();
@@ -271,6 +271,39 @@ describe("OrchestrationAgent proposal/payment/build lifecycle", () => {
       }),
     ).rejects.toThrow("Voice intake cannot attest email ownership");
     expect(mail.requests).toHaveLength(0);
+  });
+
+  it("records a deferred intake without reasoning, then completes it on reconcile", async () => {
+    // The voice post-call bridge is on a short request deadline and cannot wait
+    // for a model turn. `deferAnalysis` returns at the durable checkpoint and
+    // leaves the reasoning to the reconciliation worker.
+    const intake = {
+      idempotencyKey: "voice-intake-deferred-001",
+      channel: "voice" as const,
+      intakeId: "intake-deferred-001",
+      sourceId: "eleven-conversation-deferred-001",
+      receivedAt: NOW,
+      content:
+        "I am Jordan Lee. Email jordan@example.com. Build Mission Peak Electric a site. We agreed on USD 2,500.",
+      emailVerified: false,
+      researchConsent: false,
+    };
+
+    const recorded = await agent.acceptIntake({
+      ...intake,
+      deferAnalysis: true,
+    });
+
+    expect(recorded.status).toBe("intake_received");
+    expect(mail.requests).toHaveLength(0);
+
+    const analyzed = await agent.reconcileProject(recorded.projectId);
+
+    expect(analyzed.status).toBe("needs_clarification");
+    expect(analyzed.customer).toMatchObject({
+      email: { value: "jordan@example.com", verified: false },
+    });
+    expect(mail.requests).toHaveLength(1);
   });
 
   it("captures dictated contact details without read-back and resumes only after passwordless email ownership proof", async () => {

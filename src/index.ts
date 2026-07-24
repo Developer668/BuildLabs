@@ -13,13 +13,14 @@ import { BuildScheduler } from "./application/build-scheduler.js";
 import { recoverInterruptedRunSandboxes } from "./application/run-recovery.js";
 import { loadConfig } from "./config.js";
 import { createHttpServer } from "./http/server.js";
+import { formatConfigFailure } from "./lib/config-diagnostics.js";
 import { redactValue } from "./lib/redaction.js";
 
 if (existsSync(".env")) {
   loadEnvFile(".env");
 }
 
-const config = loadConfig();
+const config = loadStartupConfig();
 const store = new SqliteRunStore({
   path: config.BUILDLABS_DATABASE_PATH,
   slotCount: config.BUILDLABS_SLOT_COUNT,
@@ -130,4 +131,22 @@ try {
   );
   await shutdown("startup_failure");
   process.exitCode = 1;
+}
+
+/**
+ * Loads configuration, reporting which variables are wrong rather than failing
+ * with a bare schema error. Values are never printed — see config-diagnostics.
+ */
+function loadStartupConfig() {
+  try {
+    return loadConfig();
+  } catch (error) {
+    const configFailure = formatConfigFailure(error);
+    if (configFailure) {
+      process.stderr.write(`Build-agent backend configuration is invalid\n`);
+      process.stderr.write(`${configFailure}\n`);
+      process.exit(1);
+    }
+    throw error;
+  }
 }

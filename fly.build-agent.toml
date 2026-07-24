@@ -1,0 +1,127 @@
+# BuildLabs build-agent backend - PRIVATE app (Fly 6PN only).
+#
+#   fly deploy -c fly.build-agent.toml
+#
+# WHY THERE IS NO [http_service] HERE
+# ----------------------------------
+# This service runs the build -> verify -> prove -> snapshot loop, holds the
+# Daytona/Fireworks/CodeRabbit/Braintrust credentials, and exposes an internal
+# API plus unauthenticated /health and /ready endpoints. It is not a customer
+# surface and must never be reachable from the public internet.
+#
+# On Fly, "private" means: allocate no public IP address and declare no
+# [http_service] / [[services]] block, so the Fly proxy has nothing to route to
+# this app. What remains is 6PN, the encrypted private WireGuard network shared
+# by every app in the organization. Its consumers reach it at:
+#
+#   http://buildlabs-build-agent.internal:3000
+#
+# Verify after the first deploy that no public address exists:
+#
+#   fly ips list -a buildlabs-build-agent      # expect an empty list
+#   fly ips release <addr> -a buildlabs-build-agent   # if one was allocated
+#
+# Health is therefore checked by a top-level machine check ([checks] below),
+# which flyd runs against the machine directly and which needs no service.
+#
+# Secrets are NEVER stored in this file. Everything below is non-secret
+# configuration; set credentials with `fly secrets set -a <app> KEY=value`.
+# In particular FLY_ACCESS_TOKEN belongs to the orchestrator app only and must
+# never be set here: this service must not be able to deploy anything.
+
+app = "buildlabs-build-agent"
+primary_region = "sjc"
+
+# A run can be mid-verification when a deploy lands; give the scheduler time to
+# stop leases and shut down sandboxes cleanly.
+kill_signal = "SIGTERM"
+kill_timeout = "120s"
+
+swap_size_mb = 512
+
+[build]
+  dockerfile = "Dockerfile"
+
+[processes]
+  # Overrides the image CMD (which already defaults to this) for symmetry with
+  # the other Fly apps.
+  app = "node dist/index.js"
+
+# SQLite run state and proven artifacts must survive machine replacement. One
+# machine owns this volume; do not scale this app past a single machine.
+[mounts]
+  source = "buildlabs_build_agent_data"
+  destination = "/data"
+  initial_size = "10gb"
+
+[env]
+  NODE_ENV = "production"
+
+  # Bind every interface. Privacy comes from having no public IP and no
+  # [http_service], not from the bind address; "::" is dual-stack so both the
+  # 6PN peers and the local machine check can connect. Use "fly-local-6pn" here
+  # instead if you want the listener restricted to the private interface.
+  HOST = "::"
+  PORT = "3000"
+
+  BUILDLABS_DATABASE_PATH = "/data/build-agent.db"
+  BUILDLABS_ARTIFACT_DIR = "/data/artifacts"
+  BUILDLABS_SLOT_COUNT = "4"
+  BUILDLABS_LEASE_MILLISECONDS = "30000"
+
+  DAYTONA_API_URL = "https://app.daytona.io/api"
+  DAYTONA_BUILD_SNAPSHOT = "buildlabs-dind-browser-v2"
+
+  # The attestation is produced by `npm run provision:daytona` and lives on the
+  # volume because it expires after seven days and must be refreshed without a
+  # rebuild. The provisioner source is baked into the image and re-hashed at
+  # sandbox acquisition, so both paths must resolve.
+  DAYTONA_SNAPSHOT_ATTESTATION_PATH = "/data/daytona/snapshot-attestation.json"
+  DAYTONA_PROVISIONER_SOURCE_PATH = "scripts/provision-daytona-snapshot.ts"
+  DAYTONA_TELEMETRY_PATH = "/data/daytona/telemetry.jsonl"
+  DAYTONA_WARM_POOL_ROLES = ""
+  DAYTONA_OTEL_ENABLED = "false"
+
+  FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1"
+  FIREWORKS_MODEL = "accounts/fireworks/models/glm-5p2"
+  FIREWORKS_BUILDER_MODEL = "accounts/fireworks/models/glm-5p2"
+  FIREWORKS_STUDIO_MODEL = "accounts/fireworks/models/kimi-k2p6"
+  FIREWORKS_EVALUATOR_MODEL = "accounts/fireworks/models/glm-5p2"
+  FIREWORKS_VISION_MODEL = "accounts/fireworks/models/kimi-k2p6"
+
+  BRAINTRUST_API_URL = "https://api.braintrust.dev"
+  BRAINTRUST_APP_URL = "https://www.braintrust.dev"
+  BRAINTRUST_PROJECT_NAME = "BuildLabs"
+
+  # The CodeRabbit CLI is installed in the image; its credentials are seeded
+  # once into this pre-authenticated home on the volume. The service never
+  # accepts a CodeRabbit key as a process argument.
+  CODERABBIT_AUTH_MODE = "preauthenticated"
+  CODERABBIT_AUTH_HOME = "/data/coderabbit"
+  CODERABBIT_BIN = "coderabbit"
+  CODERABBIT_TIMEOUT_SECONDS = "600"
+
+# Machine-level health check. This works without a [[services]] block, which is
+# exactly what a 6PN-only app needs. /health is unauthenticated and cheap;
+# /ready additionally reports sponsor configuration and is better suited to
+# manual inspection over `fly proxy 3000:3000 -a buildlabs-build-agent`.
+[checks]
+  [checks.health]
+    type = "http"
+    port = 3000
+    method = "get"
+    path = "/health"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "30s"
+
+[deploy]
+  # Volumes rule out blue/green, and only one machine may own the SQLite file.
+  strategy = "rolling"
+
+[[vm]]
+  # Sized for up to BUILDLABS_SLOT_COUNT concurrent runs, each shelling out to
+  # git and the CodeRabbit CLI. The heavy work (docker build, browsers) happens
+  # inside Daytona sandboxes, not here.
+  size = "shared-cpu-2x"
+  memory = "2gb"

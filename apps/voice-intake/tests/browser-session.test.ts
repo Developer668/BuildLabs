@@ -313,4 +313,42 @@ describe("browser conversation sessions", () => {
       error: "provider_unavailable",
     });
   });
+
+  it("falls back to the conversation id carried inside the signed URL", async () => {
+    const conversationId = "conv_browser_url_only_00001";
+    const fetchMock = vi.fn<typeof fetch>(
+      async () =>
+        new Response(
+          JSON.stringify({
+            signed_url: `wss://api.elevenlabs.io/v1/convai/conversation?agent_id=${AGENT_ID}&conversation_id=${conversationId}&token=single-use-url-only`,
+          }),
+          { headers: { "content-type": "application/json" } },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await createConversationSession(sessionRequest());
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { conversationId: string };
+    expect(body.conversationId).toBe(conversationId);
+  });
+
+  it("rejects a provider response with no conversation id in either place", async () => {
+    const fetchMock = vi.fn<typeof fetch>(
+      async () =>
+        new Response(
+          JSON.stringify({
+            signed_url: `wss://api.elevenlabs.io/v1/convai/conversation?agent_id=${AGENT_ID}&token=single-use-no-id`,
+          }),
+          { headers: { "content-type": "application/json" } },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await createConversationSession(sessionRequest());
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: "provider_unavailable",
+    });
+  });
 });

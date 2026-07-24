@@ -1,0 +1,54 @@
+{
+  // BuildLabs voice intake - Cloudflare Worker (vinext + @cloudflare/vite-plugin).
+  //
+  // This is the committed, authoritative Worker configuration. The Vite plugin
+  // discovers this file, merges the inline overrides from vite.config.ts on top
+  // of it (main + compatibility_flags), and emits the deployable config to
+  // dist/server/wrangler.json with `assets.directory` rewritten to the built
+  // client output. Do not edit the generated file.
+  //
+  // Deploy from apps/voice-intake:
+  //   npm run build --workspace @buildlabs/voice-intake
+  //   npx wrangler deploy
+  // (.wrangler/deploy/config.json points wrangler at the generated config.)
+  //
+  // SECRETS ARE NEVER COMMITTED HERE. Every credential is set out of band with
+  // `wrangler secret put <NAME>` (or `wrangler secret bulk`), and locally
+  // through the git-ignored apps/voice-intake/.env.local. `vars` below is for
+  // non-secret values only, which is why it is empty.
+  // See docs/DEPLOYMENT.md for the required secret list.
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "buildlabs-voice-intake",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-07-23",
+  // nodejs_compat is required by the vinext server runtime and the Node APIs
+  // used by the signed ElevenLabs bridges.
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Static asset fetcher. worker/index.ts reads env.ASSETS to serve the
+  // original image bytes into the /_vinext/image optimizer. The directory is
+  // supplied by the Vite plugin at build time and must not be set here.
+  "assets": {
+    "binding": "ASSETS",
+  },
+
+  // Cloudflare Images binding. worker/index.ts reads env.IMAGES to transform
+  // and re-encode optimized images.
+  "images": {
+    "binding": "IMAGES",
+  },
+
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+  },
+
+  // The ElevenLabs post-call webhook, the SIP pre-call route, and the browser
+  // session route all need a stable public origin. workers.dev is fine for
+  // testing; for a custom domain matching BUILDLABS_VOICE_PUBLIC_BASE_URL, add
+  // the zone-backed route and re-run the ElevenLabs reconciler:
+  //
+  // "routes": [
+  //   { "pattern": "voice.example.com", "custom_domain": true }
+  // ]
+}

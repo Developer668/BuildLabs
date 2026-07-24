@@ -306,8 +306,12 @@ export function createHttpServer(
 
   server.get("/ready", (_request, reply) => {
     const providers = configuredSponsorStatuses(dependencies);
-    const ready = Object.values(providers).every(
-      (status) => status !== "unconfigured",
+    // ElevenLabs is optional in configuration, so an install without voice must
+    // still become ready. Only a provider this service cannot run without can
+    // hold readiness down.
+    const ready = Object.entries(providers).every(
+      ([name, status]) =>
+        status !== "unconfigured" || OPTIONAL_SPONSORS.has(name as SponsorName),
     );
     return reply.code(ready ? 200 : 503).send({
       status: ready ? "ready" : "not_ready",
@@ -923,6 +927,9 @@ export function createHttpServer(
   return server;
 }
 
+/** Sponsors whose absence is a supported configuration, not a fault. */
+const OPTIONAL_SPONSORS = new Set<SponsorName>(["elevenlabs"]);
+
 function configuredSponsorStatuses(
   dependencies: HttpServerDependencies,
 ): Record<SponsorName, SponsorStatus> {
@@ -960,8 +967,10 @@ async function probeSponsorProviders(
         outcome.status === "fulfilled" ? "healthy" : "unhealthy";
     }
   });
-  const ready = Object.values(providers).every(
-    (status) => status !== "unconfigured" && status !== "unhealthy",
+  const ready = Object.entries(providers).every(
+    ([name, status]) =>
+      status !== "unhealthy" &&
+      (status !== "unconfigured" || OPTIONAL_SPONSORS.has(name as SponsorName)),
   );
   return {
     statusCode: ready ? 200 : 503,

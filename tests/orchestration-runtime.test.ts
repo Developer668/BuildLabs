@@ -45,6 +45,40 @@ describe("orchestration runtime configuration", () => {
     expect(config.FLY_PRIMARY_REGION).toBe("sjc");
   });
 
+  it("accepts an optional dashboard origin and a private build-backend host", () => {
+    const config = loadOrchestrationConfig({
+      ...validEnvironment(),
+      ORCHESTRATION_DASHBOARD_BASE_URL: "https://app.buildlabs.example",
+      // Fly private networking: the build backend is not publicly exposed.
+      BUILD_BACKEND_BASE_URL: "http://buildlabs-build-agent.internal:3000",
+    });
+
+    expect(config.ORCHESTRATION_DASHBOARD_BASE_URL).toBe(
+      "https://app.buildlabs.example",
+    );
+    expect(config.BUILD_BACKEND_BASE_URL).toBe(
+      "http://buildlabs-build-agent.internal:3000",
+    );
+  });
+
+  it("still rejects plaintext HTTP to a public build-backend host", () => {
+    expect(() =>
+      loadOrchestrationConfig({
+        ...validEnvironment(),
+        BUILD_BACKEND_BASE_URL: "http://builds.buildlabs.example:3000",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects a non-HTTPS dashboard origin", () => {
+    expect(() =>
+      loadOrchestrationConfig({
+        ...validEnvironment(),
+        ORCHESTRATION_DASHBOARD_BASE_URL: "http://app.buildlabs.example",
+      }),
+    ).toThrow();
+  });
+
   it("rejects malformed key material, implicit Stripe mode, and unsafe preview timing", () => {
     expect(() =>
       loadOrchestrationConfig({

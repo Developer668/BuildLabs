@@ -31,10 +31,11 @@ Most AI builders optimize for a fast first draft. BuildLabs optimizes for
 > to an ElevenLabs SIP resource on the same testing branch; Plivo never becomes
 > a second recorder or transcript store. Both reconcilers are plan-first, use
 > expected-base CAS, and cannot merge or move production traffic. The
-> Next.js/CopilotKit
-> dashboard frontend, SSE, a customer-renderable raster WIP gateway,
-> production-complete session controls, and provider-backed end-to-end
-> verification remain separate work.
+> Next.js/CopilotKit dashboard now serves the operator studio and the customer
+> workspace on its own origin, with opaque project aliases, resumable SSE, and
+> the customer-facing half of the sanitized raster WIP gateway. The builder-side
+> producer that captures and attests WIP frames, production-complete session
+> controls, and provider-backed end-to-end verification remain separate work.
 > Full spec:
 > [`PRODUCT_SPEC.md`](./PRODUCT_SPEC.md). Guardrails and real commands:
 > [`AGENTS.md`](./AGENTS.md).
@@ -46,7 +47,10 @@ It provides focus, two-up, and four-up candidate monitors; operator-only raw
 preview support; activity, contract, proof, diff, and tree inspection; a
 four-candidate filmstrip; connection settings; and an admin-review draft flow
 that never auto-applies instructions to the swarm. It uses authenticated REST
-polling and does not depend on a CopilotKit UI or AG-UI frontend client.
+polling and does not depend on a CopilotKit UI or AG-UI frontend client. The
+newer CopilotKit operator surface lives beside the customer workspace in
+`apps/dashboard` at `/operator`; both read the same authenticated build-backend
+API.
 
 - UI and interaction reference:
   [`STUDIO_FRONTEND_GUIDE.md`](./STUDIO_FRONTEND_GUIDE.md)
@@ -166,10 +170,13 @@ RFC822 message. Raw `Authentication-Results` text is never trusted as proof.
 
 **Observation vs preview vs production:** Daytona runs the app live while it is
 being built. Operators can inspect raw ephemeral URLs; authenticated customers
-currently see only sanitized activity/proof counts labeled `UNVERIFIED WIP`;
-the raster gateway is not implemented and no raw Daytona URL crosses this
-boundary. A review preview is a frozen, proven snapshot. Fly.io hosts the final
-proven result at a real always-on HTTPS URL.
+currently see only sanitized activity/proof counts labeled `UNVERIFIED WIP`. The
+dashboard implements the customer-facing half of the raster gateway —
+watermarked, layout-only PNG frames behind an attested internal ingest — but no
+builder yet captures and attests a frame, so nothing reaches a customer and the
+backend projection stays pinned to `customerRenderable: false`. No raw Daytona
+URL crosses this boundary. A review preview is a frozen, proven snapshot.
+Fly.io hosts the final proven result at a real always-on HTTPS URL.
 Fly.io was chosen for its Docker-native, token-based unattended deploy
 (`flyctl deploy --remote-only` / Machines API) and scale-to-zero pricing. Vercel
 and v0 are excluded. The **production deploy token lives only with the
@@ -324,6 +331,7 @@ mandatory gate before builder dispatch.
 ```text
 .
 ├── apps/
+│   ├── dashboard/    # Next.js/CopilotKit operator studio, customer workspace, and customer BFF
 │   └── voice-intake/ # Local ElevenLabs archive and signed intake bridge
 ├── src/
 │   ├── adapters/     # Sponsor providers, SQLite, artifacts
@@ -338,7 +346,8 @@ mandatory gate before builder dispatch.
 │   │   └── http/         # Intake, passwordless dashboard, steering, and provider webhooks
 │   ├── orchestration-index.ts # General-orchestrator composition root
 │   └── ports/        # Provider and persistence interfaces
-├── scripts/          # Daytona provisioning and bounded live provider probes
+├── scripts/          # Daytona provisioning, config check, and bounded live provider probes
+├── studio/           # Vite operator studio SPA served by the build backend at /studio/
 ├── tests/            # Build/proof tests plus orchestration*.test.ts lifecycle tests
 ├── PRODUCT_SPEC.md   # Full product specification (source of truth)
 ├── ADMIN_DASHBOARD_SPEC.md   # Admin/operator dashboard UX, auth, events, and states
@@ -368,6 +377,15 @@ an apply also requires `--apply --expected-base-version=<version>`.
 `npm run plivo:probe` performs bounded read-only SIP inventory, while
 `npm run plivo:reconcile` defaults to plan; applying requires
 `--apply --expected-base-digest=<digest> --allow-number-routing`.
+`npm run dev:dashboard` starts the Next.js dashboard on `127.0.0.1:3200`.
+
+`npm run check:config` reports, per service, which configuration variables are
+missing or invalid. It prints only variable names and constraints — never
+values — and checks each service against the env file that service actually
+loads at runtime: the two Node backends read the repository-root `.env`, the
+dashboard reads `apps/dashboard/.env.local`, and Voice Intake reads
+`apps/voice-intake/.env.local`. Next.js and vinext never see the root `.env`, so
+a variable set only there is invisible to those two apps.
 
 After `npm run build`, `npm start` is the production supervisor: it sets
 `NODE_ENV=production`, starts both compiled backends, and stops the pair if
@@ -376,9 +394,22 @@ either process exits. To operate them separately, use
 configuration requires live-mode Stripe credentials and real routable sender,
 reply, webhook, and Checkout-return domains.
 
-Set `ORCHESTRATION_PUBLIC_BASE_URL` to the orchestrator's public HTTPS base and
-register its derived `/v1/orchestration/webhooks/stripe` and
+**Two public origins.** The orchestrator and the dashboard are deployed at
+separate public HTTPS origins with separate jobs. The orchestrator's origin is
+provider-facing: set `ORCHESTRATION_PUBLIC_BASE_URL` to it and register the
+derived `/v1/orchestration/webhooks/stripe` and
 `/v1/orchestration/webhooks/resend` endpoints with those providers. The
+dashboard's origin is customer-facing: set `ORCHESTRATION_DASHBOARD_BASE_URL` to
+it so every emailed customer login link resolves to the dashboard's
+`/v1/customer/access` rather than the orchestrator's own origin. That route
+proxies the orchestrator's passwordless exchange, re-issues the session and CSRF
+cookies as host-only cookies on the dashboard origin, and swaps the raw project
+UUID for an opaque `prj_…` alias before redirecting to
+`/dashboard/projects/{alias}`. Customers therefore only ever hold a dashboard
+session cookie and only ever see aliases; internal project UUIDs and the
+orchestrator's API stay behind the BFF. `ORCHESTRATION_DASHBOARD_BASE_URL` is
+optional and falls back to `ORCHESTRATION_PUBLIC_BASE_URL`, which is correct
+only for a single-origin deployment that serves both behind one proxy. The
 authenticated orchestrator `/ready` check covers Fireworks, Braintrust, Stripe,
 Resend, Fly.io, and the authenticated build backend with its exact Daytona
 snapshot contract. `npm run smoke:providers` performs only real, read-only
@@ -399,8 +430,11 @@ and apply an edge-wide limiter in multi-instance deployments. The built-in
 digest-keyed limiter is per process and deliberately ignores forwarded IP
 headers.
 
-The initial customer dashboard backend uses these public, project-scoped
-routes:
+The orchestrator exposes these project-scoped customer-dashboard routes.
+Customers reach them only through the dashboard BFF, whose public equivalents
+are `/v1/customer/access`, `/v1/customer/access/requests`, and
+`/v1/customer/projects/:projectAlias` plus its `/events` and `/steering`
+children:
 
 | Route | Current behavior |
 | ----- | ---------------- |
@@ -414,8 +448,11 @@ routes:
 The build backend supplies the orchestrator-only safe projection at
 `GET /v1/build-runs/:runId/customer-observability`; it never includes raw logs,
 prompts, commands, sandbox IDs, mutable preview URLs, reasoning, or artifact
-contents. The access response redirects to `/dashboard/projects/:projectId`,
-which is a route for the separate frontend and is not served by this repository.
+contents. The orchestrator's access response returns
+`/dashboard/projects/:projectId`; the dashboard BFF consumes that raw UUID,
+never forwards it, and returns `/dashboard/projects/:projectAlias` instead. That
+aliased route is served by this repository at
+[`apps/dashboard/app/dashboard/projects/[projectAlias]/page.tsx`](./apps/dashboard/app/dashboard/projects/%5BprojectAlias%5D/page.tsx).
 
 The reissue path reloads after an optimistic conflict at most three times. Each
 request family can rotate an unsent 15-minute capability at most three delivery
@@ -425,10 +462,14 @@ effect's persisted schedule and budget. SQLite schema v6 keeps a content-free
 pending-login bit, including a migration backfill, so even a terminal project
 remains discoverable until that mail effect settles.
 
-Server-side session revocation/logout and renewal, a generic email-entry request
-flow, edge-wide access rate limits, opaque customer aliases, SSE, the frontend,
-the raster WIP gateway, and provider-backed end-to-end verification remain open
-before this boundary is production-complete.
+The frontend, opaque customer aliases, resumable SSE, and the customer-facing
+raster WIP gateway are now implemented in `apps/dashboard`. Logout clears the
+dashboard-origin cookies and its projection state, but reports
+`globalRevocation: false`: the orchestrator-signed session stays valid until it
+expires. Server-side session revocation and renewal, a generic email-entry
+request flow, edge-wide access rate limits, the builder-side WIP frame producer,
+and provider-backed end-to-end verification remain open before this boundary is
+production-complete.
 
 One build API assignment creates one Fireworks candidate agent in one isolated
 Daytona builder, followed by two fresh proof verifiers. Initial scaffolds can be

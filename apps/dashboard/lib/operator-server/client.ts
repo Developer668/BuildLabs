@@ -1,3 +1,4 @@
+import { isPrivateServiceHost } from "../server/orchestration-client";
 import { OperatorBffError } from "./http";
 
 const MAX_UPSTREAM_JSON_BYTES = 2 * 1024 * 1024;
@@ -81,18 +82,14 @@ export function operatorUpstreamUrl(
   } catch {
     throw invalidConfiguration();
   }
-  const isLoopback =
-    base.hostname === "127.0.0.1" ||
-    base.hostname === "localhost" ||
-    base.hostname === "[::1]" ||
-    base.hostname === "::1";
   if (
     base.username !== "" ||
     base.password !== "" ||
     base.search !== "" ||
     base.hash !== "" ||
     base.pathname !== "/" ||
-    (base.protocol !== "https:" && !(base.protocol === "http:" && isLoopback))
+    (base.protocol !== "https:" &&
+      !(base.protocol === "http:" && isPrivateServiceHost(base.hostname)))
   ) {
     throw invalidConfiguration();
   }

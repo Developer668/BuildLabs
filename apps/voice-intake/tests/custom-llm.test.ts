@@ -220,6 +220,7 @@ describe("ElevenLabs custom LLM bridge", () => {
       model: FIREWORKS_MODEL,
       stream: true,
       max_tokens: 96,
+      reasoning_effort: "none",
       parallel_tool_calls: false,
       safe_tokenization: true,
       tools,

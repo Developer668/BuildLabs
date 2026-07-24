@@ -38,12 +38,20 @@ const proofSummaryLinks = new ProofSummaryLinkCodec({
 });
 
 describe("orchestration HTTP boundary", () => {
-  it("authenticates liveness and dependency readiness", async () => {
+  it("serves unauthenticated liveness and authenticated dependency readiness", async () => {
     const fixture = createFixture();
-    expect(
-      (await fixture.server.inject({ method: "GET", url: "/health" }))
-        .statusCode,
-    ).toBe(401);
+    // Liveness is public so a container platform health check can reach it; it
+    // reveals nothing beyond the process being up. Readiness stays behind the
+    // internal token because it reports per-provider configuration state.
+    const publicHealth = await fixture.server.inject({
+      method: "GET",
+      url: "/health",
+    });
+    expect(publicHealth.statusCode).toBe(200);
+    expect(publicHealth.json()).toEqual({
+      status: "ok",
+      component: "general-orchestrator",
+    });
     const headers = { authorization: `Bearer ${internalToken}` };
     const health = await fixture.server.inject({
       method: "GET",
@@ -449,7 +457,10 @@ describe("orchestration HTTP boundary", () => {
         revision: 3,
       },
     });
+    // The route records the intake and answers; reasoning is left to the
+    // reconciliation worker so the caller is not held for a model turn.
     expect(fixture.controller.acceptIntake).toHaveBeenCalledWith({
+      deferAnalysis: true,
       idempotencyKey: "voice-call-one",
       ...body,
     });
@@ -578,6 +589,7 @@ describe("orchestration HTTP boundary", () => {
     });
     expect(captured.statusCode).toBe(202);
     expect(fixture.controller.acceptIntake).toHaveBeenCalledWith({
+      deferAnalysis: true,
       idempotencyKey: "voice-passwordless-capture",
       ...body,
       emailVerified: false,
@@ -636,9 +648,8 @@ describe("orchestration HTTP boundary", () => {
     });
     const token = dashboardLoginToken(link);
 
-    expect(new URL(link).pathname).toBe(
-      "/v1/orchestration/customer-dashboard/access",
-    );
+    // Emailed links land on the dashboard, which proxies the exchange below.
+    expect(new URL(link).pathname).toBe("/v1/customer/access");
     const landing = await fixture.server.inject({
       method: "GET",
       url: "/v1/orchestration/customer-dashboard/access",

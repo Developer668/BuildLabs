@@ -31,10 +31,51 @@ describe("CustomerDashboardAccessCodec", () => {
     });
     expect(first).not.toContain("Customer");
     expect(first).not.toContain("example.com");
-    expect(new URL(first).pathname).toBe(
-      "/v1/orchestration/customer-dashboard/access",
-    );
+    expect(new URL(first).pathname).toBe("/v1/customer/access");
     expect(new URL(first).hash).toContain("#token=login.v1.");
+  });
+
+  it("sends login links to the dashboard origin, not the orchestrator's own", () => {
+    // The customer session lives on the dashboard: it exchanges this token with
+    // the orchestrator, sets its own cookie, and swaps the project id for an
+    // opaque alias. A link pointing at the orchestrator would dead-end, because
+    // the redirect target is a dashboard route the orchestrator does not serve.
+    const codec = new CustomerDashboardAccessCodec({
+      publicBaseUrl: "https://orchestrator.buildlabs.example",
+      dashboardBaseUrl: "https://app.buildlabs.example",
+      secret: Buffer.alloc(32, 7),
+      now: () => new Date(NOW),
+    });
+
+    const link = new URL(
+      codec.createLoginLink({
+        projectId: PROJECT_ID,
+        email: "customer@example.com",
+        nonce: "dashboard-login-nonce-002",
+      }),
+    );
+
+    expect(link.origin).toBe("https://app.buildlabs.example");
+    expect(link.pathname).toBe("/v1/customer/access");
+  });
+
+  it("falls back to the orchestrator origin for a single-origin deployment", () => {
+    const codec = new CustomerDashboardAccessCodec({
+      publicBaseUrl: "https://orchestrator.buildlabs.example",
+      secret: Buffer.alloc(32, 7),
+      now: () => new Date(NOW),
+    });
+
+    const link = new URL(
+      codec.createLoginLink({
+        projectId: PROJECT_ID,
+        email: "customer@example.com",
+        nonce: "dashboard-login-nonce-003",
+      }),
+    );
+
+    expect(link.origin).toBe("https://orchestrator.buildlabs.example");
+    expect(link.pathname).toBe("/v1/customer/access");
   });
 
   it("separates short login capabilities from longer customer sessions", () => {

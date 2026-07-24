@@ -398,10 +398,7 @@ export class PlivoPstnReconciler {
 
     if (!trunkMatchesDesired(trunk, preMutation.names, uri.uri_uuid)) {
       await this.#plivo.updateTrunk(trunk.trunk_id, {
-        name: preMutation.names.trunk,
         trunk_status: "enabled",
-        secure: true,
-        primary_uri_uuid: uri.uri_uuid,
       });
       trunk = PlivoTrunkSchema.parse(
         await this.#plivo.getTrunk(trunk.trunk_id),
@@ -1284,7 +1281,7 @@ function desiredPhoneProjection(
       branchId: bindings.branchId,
     },
     inboundTrunk: {
-      allowedAddresses: [],
+      allowedAddresses: ["0.0.0.0/0"],
       mediaEncryption: "required",
       hasAuthCredentials: false,
       remoteDomains: [],

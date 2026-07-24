@@ -1,0 +1,54 @@
+# Build context exclusions shared by ./Dockerfile and
+# ./apps/dashboard/Dockerfile. Both images are built from the repository root
+# because this is an npm workspace and the lockfile lives here.
+
+# Version control and CI metadata
+.git
+.gitignore
+.github
+
+# Never copy credentials into a build context
+.env
+.env.*
+**/.env
+**/.env.*
+**/.dev.vars
+**/.dev.vars.*
+
+# Installed and generated trees (reinstalled/rebuilt inside the image)
+node_modules
+**/node_modules
+dist
+**/dist
+.next
+**/.next
+.vinext
+**/.vinext
+.wrangler
+**/.wrangler
+out
+**/out
+*.tsbuildinfo
+**/*.tsbuildinfo
+
+# Local runtime state, reports, and caches
+.buildlabs
+coverage
+**/coverage
+apps/dashboard/playwright-report
+apps/dashboard/test-results
+**/.turbo
+**/.vitest
+
+# Docs, specs, and editor/OS junk
+*.md
+docs
+.claude
+.prettierignore
+.prettierrc.json
+.DS_Store
+**/.DS_Store
+*.log
+
+# Server tests are excluded from tsconfig.build.json and are not needed
+tests

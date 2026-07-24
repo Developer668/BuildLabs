@@ -57,6 +57,11 @@ export interface OrchestrationIntakeCommand {
   trustedSenderEmail?: string;
   researchConsent: boolean;
   provider?: string;
+  /**
+   * Return once the intake is durably recorded, leaving reasoning and the first
+   * customer mail to the reconciliation worker.
+   */
+  deferAnalysis?: boolean;
 }
 
 export interface OrchestrationEmailOwnershipCommand {

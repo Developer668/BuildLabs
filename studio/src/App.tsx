@@ -22,7 +22,6 @@ import {
   ListChecks,
   Maximize2,
   Menu,
-  Mic,
   Monitor,
   Mountain,
   PanelLeft,
@@ -1800,13 +1799,6 @@ function AssistantBar({
             placeholder="Inspect this run, compare candidates, or draft a verified change brief…"
             aria-label="Draft a reviewed operator action"
           />
-          <button
-            className="assistant-voice"
-            type="button"
-            aria-label="Use voice"
-          >
-            <Mic size={17} />
-          </button>
           <button
             className="review-button"
             type="button"
