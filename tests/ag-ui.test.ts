@@ -296,10 +296,7 @@ describe("BuildLabs AG-UI transport", () => {
     store.markCancelled(run.id, lease);
 
     const events = await collectEvents(
-      streamBuildRunAsAgUi(
-        parseBuildLabsAgUiRunInput(runInput(run.id)),
-        store,
-      ),
+      streamBuildRunAsAgUi(parseBuildLabsAgUiRunInput(runInput(run.id)), store),
     );
     expect(
       events.find((event) => event.type === EventType.STATE_SNAPSHOT),

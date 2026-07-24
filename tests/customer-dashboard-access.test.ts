@@ -61,6 +61,18 @@ describe("CustomerDashboardAccessCodec", () => {
     expect(session.grant.emailDigest).toBe(login.emailDigest);
     expect(session.grant.projectId).toBe(login.projectId);
     expect(session.grant.expiresAt).toBeGreaterThan(login.expiresAt);
+    expect(session.grant.nonce).toMatch(/^session-[A-Za-z0-9_-]{24}$/);
+  });
+
+  it("prefixes generated nonces with an allowed purpose character", () => {
+    const codec = createCodec();
+    const loginUrl = codec.createLoginLink({
+      projectId: PROJECT_ID,
+      email: "customer@example.com",
+    });
+    const login = codec.parseLoginLink(loginToken(loginUrl));
+
+    expect(login.nonce).toMatch(/^login-[A-Za-z0-9_-]{24}$/);
   });
 
   it("rejects tampering, wrong email bindings, and expiry", () => {

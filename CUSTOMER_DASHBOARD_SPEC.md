@@ -15,11 +15,11 @@
 > recently expired capability; the generic endpoint rechecks protected identity,
 > mails only the stored address, and enforces one request family per capability
 > digest, 32 families per project, three delivery generations per family, a
-> durable per-project send floor, and a three-attempt optimistic-CAS reload.
-> A content-free schema-v6 pending-login index keeps terminal projects
-> reconciliable until that exact effect settles.
-> The build backend supplies an internal bounded activity projection and always
-> reports `customerRenderable: false`.
+> durable per-project send floor, and a three-attempt optimistic-CAS reload. A
+> content-free schema-v6 pending-login index keeps terminal projects
+> reconciliable until that exact effect settles. The build backend supplies an
+> internal bounded activity projection and always reports
+> `customerRenderable: false`.
 >
 > A Next.js/CopilotKit frontend, SSE, customer-renderable raster WIP gateway,
 > opaque customer aliases, server-side session revocation/logout/renewal and
@@ -443,8 +443,8 @@ Updates is one ordered conversation and decision timeline for:
 - preview availability;
 - deployment and delivery.
 
-Each entry identifies its channel as `Dashboard`, `Email`, or `BuildLabs`.
-Email bodies are not mirrored automatically. The projection stores and renders a
+Each entry identifies its channel as `Dashboard`, `Email`, or `BuildLabs`. Email
+bodies are not mirrored automatically. The projection stores and renders a
 customer-safe summary with a link to the resulting version or action. This
 avoids duplicating private thread content into broadly consumed event records.
 
@@ -467,27 +467,27 @@ The composer:
 The API retains the canonical lifecycle value and sends a separate
 customer-facing label. The frontend must not reinterpret it.
 
-| Canonical state                  | Customer label                   | Primary behavior                                 |
-| -------------------------------- | -------------------------------- | ------------------------------------------------ |
-| `intake_received`                | Reviewing your request           | No build activity                                |
-| `needs_clarification`            | Details needed                   | Show the focused question                        |
-| `researching`                    | Gathering approved context       | Show sources only after capture and sanitization |
-| `proposal_drafting`              | Preparing your proposal          | No payment or build claim                        |
-| `awaiting_customer_revision`     | Waiting for your response        | Open Updates                                     |
-| `awaiting_payment`               | Payment needed                   | Show exact proposal version and Checkout action  |
-| `payment_verification_failed`    | Payment needs attention          | Do not imply paid                                |
-| `paid`                           | Payment verified                 | Build has not necessarily started                |
-| `building`                       | Building your project            | Enable live structured builder activity          |
-| `verifying`                      | Proving this version             | Keep builder outcomes distinct                   |
-| `no_proven_candidate`            | No version passed proof          | Show what failed and next durable action         |
-| `preview_ready`                  | Proven preview ready             | Show only the immutable preview                  |
-| `revision_pending`               | Processing your changes          | Show current proven version separately           |
-| `deploying`                      | Deploying the proven version     | Production link remains unavailable              |
-| `deployment_verification_failed` | Deployment needs attention       | Preserve the prior known-good release            |
-| `delivering`                     | Confirming delivery              | Do not imply the email was delivered             |
-| `completed`                      | Delivered                        | Show verified production and proof summary       |
-| `cancelled`                      | Project cancelled                | Read-only history                                |
-| `failed`                         | Project stopped                  | Read-only evidence and contact path              |
+| Canonical state                  | Customer label                  | Primary behavior                                 |
+| -------------------------------- | ------------------------------- | ------------------------------------------------ |
+| `intake_received`                | Reviewing your request          | No build activity                                |
+| `needs_clarification`            | Details needed                  | Show the focused question                        |
+| `researching`                    | Gathering approved context      | Show sources only after capture and sanitization |
+| `proposal_drafting`              | Preparing your proposal         | No payment or build claim                        |
+| `awaiting_customer_revision`     | Waiting for your response       | Open Updates                                     |
+| `awaiting_payment`               | Payment needed                  | Show exact proposal version and Checkout action  |
+| `payment_verification_failed`    | Payment needs attention         | Do not imply paid                                |
+| `paid`                           | Payment verified                | Build has not necessarily started                |
+| `building`                       | Building your project           | Enable live structured builder activity          |
+| `verifying`                      | Proving this version            | Keep builder outcomes distinct                   |
+| `no_proven_candidate`            | No version passed proof         | Show what failed and next durable action         |
+| `preview_ready`                  | Proven preview ready            | Show only the immutable preview                  |
+| `revision_pending`               | Processing your changes         | Show current proven version separately           |
+| `deploying`                      | Deploying the proven version    | Production link remains unavailable              |
+| `deployment_verification_failed` | Deployment needs attention      | Preserve the prior known-good release            |
+| `delivering`                     | Confirming delivery             | Do not imply the email was delivered             |
+| `completed`                      | Delivered                       | Show verified production and proof summary       |
+| `cancelled`                      | Project cancelled               | Read-only history                                |
+| `failed`                         | Project stopped                 | Read-only evidence and contact path              |
 | `needs_operator_attention`       | BuildLabs is resolving an issue | No invented ETA or progress                      |
 
 ### 6.2 Builder state
@@ -618,16 +618,16 @@ The implemented flow is:
 
 The reissue route always returns the same `202 {"status":"accepted"}` for valid,
 malformed, too-old, mismatched, throttled, and provider-failed requests. A
-signed capability digest can create only one durable request family, so replaying
-the same capability cannot queue another replacement. A project accepts at most
-32 distinct request families. Different eligible families are separated by a
-durable one-minute project floor.
+signed capability digest can create only one durable request family, so
+replaying the same capability cannot queue another replacement. A project
+accepts at most 32 distinct request families. Different eligible families are
+separated by a durable one-minute project floor.
 
 If a provider has not completed delivery before the 15-minute capability
 expires, the same family can rotate, but no passwordless-link family may exceed
-three delivery generations. A reissue command that loses an optimistic
-aggregate compare-and-set reloads protected state and retries no more than three
-times. These are bounded durability controls, not an edge-wide abuse control.
+three delivery generations. A reissue command that loses an optimistic aggregate
+compare-and-set reloads protected state and retries no more than three times.
+These are bounded durability controls, not an edge-wide abuse control.
 
 There is no public "enter an email to request a link" endpoint yet. Initial
 links originate from durable orchestrator email effects, and reissue requires an

@@ -73,8 +73,8 @@ Service URLs require HTTPS except for loopback build-backend development.
 Checkout return URLs always require HTTPS. Internal tokens and provider secrets
 are never included in responses or logs. The orchestrator and build backend use
 distinct internal bearer tokens: `BUILD_BACKEND_INTERNAL_TOKEN` must match the
-build service's `BUILDLABS_INTERNAL_TOKEN`, while
-`ORCHESTRATION_INTERNAL_TOKEN` must be different.
+build service's `BUILDLABS_INTERNAL_TOKEN`, while `ORCHESTRATION_INTERNAL_TOKEN`
+must be different.
 
 Production requires `STRIPE_EXPECTED_LIVEMODE=true` and a recognizable live
 Stripe secret or restricted key. It also rejects reserved placeholder hosts for

@@ -626,10 +626,7 @@ export function createHttpServer(
         });
       }
       if (
-        !validBearerToken(
-          request,
-          dependencies.config.BUILDLABS_INTERNAL_TOKEN,
-        )
+        !validBearerToken(request, dependencies.config.BUILDLABS_INTERNAL_TOKEN)
       ) {
         return reply.code(401).send({
           error: "unauthorized",

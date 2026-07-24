@@ -23,9 +23,12 @@ Most AI builders optimize for a fast first draft. BuildLabs optimizes for
 > backend slice now includes scanner-safe passwordless exchange, project-scoped
 > sessions, bounded signed-capability access-link reissue, terminal-project mail
 > recovery, CSRF-protected steering, polling snapshots/events, and sanitized
-> build activity. Browser voice, the Next.js/CopilotKit dashboard frontend, SSE,
-> a customer-renderable raster WIP gateway, production-complete session
-> controls, and provider-backed end-to-end verification remain separate work.
+> build activity. A local Voice Intake workspace reads the bounded ElevenLabs
+> archive on demand and forwards signature-verified completed sessions into the
+> protected orchestration intake contract without persisting a second transcript
+> copy. The browser voice client, Next.js/CopilotKit dashboard frontend, SSE, a
+> customer-renderable raster WIP gateway, production-complete session controls,
+> and provider-backed end-to-end verification remain separate work.
 > Full spec:
 > [`PRODUCT_SPEC.md`](./PRODUCT_SPEC.md). Guardrails and real commands:
 > [`AGENTS.md`](./AGENTS.md).
@@ -299,6 +302,8 @@ mandatory gate before builder dispatch.
 
 ```text
 .
+├── apps/
+│   └── voice-intake/ # Local ElevenLabs archive and signed intake bridge
 ├── src/
 │   ├── adapters/     # Sponsor providers, SQLite, artifacts
 │   ├── application/  # Agent/studio loops, scheduler, verification, proof gate
@@ -330,7 +335,10 @@ Docker-in-Docker + Chromium snapshot with `npm run provision:daytona`, then run
 `npm run check`. The provisioner performs real Docker build/run and rendered
 visibility probes before accepting the snapshot. Development uses `npm run dev`
 for the build backend and `npm run dev:orchestration` for the general
-orchestrator.
+orchestrator. `npm run dev:voice` starts the local Voice Intake workspace; its
+server-only bridge requires `ELEVENLABS_AGENT_ID`, `ELEVENLABS_API_KEY`,
+`ELEVENLABS_WEBHOOK_SECRET`, and `ORCHESTRATION_INTERNAL_TOKEN`. It defaults to
+the local orchestrator at `http://127.0.0.1:3100`.
 
 After `npm run build`, `npm start` is the production supervisor: it sets
 `NODE_ENV=production`, starts both compiled backends, and stops the pair if

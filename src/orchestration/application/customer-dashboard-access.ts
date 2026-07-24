@@ -130,7 +130,7 @@ export class CustomerDashboardAccessCodec {
       emailDigest: this.emailDigest(input.email),
       issuedAt,
       expiresAt,
-      nonce: input.nonce ?? randomBytes(18).toString("base64url"),
+      nonce: input.nonce ?? `login-${randomBytes(18).toString("base64url")}`,
     });
     const token = this.#encode(grant);
     const url = new URL(ACCESS_PATH, this.#publicBaseUrl);
@@ -161,7 +161,7 @@ export class CustomerDashboardAccessCodec {
       purpose: "session",
       issuedAt,
       expiresAt: issuedAt + this.#sessionTtlSeconds,
-      nonce: randomBytes(18).toString("base64url"),
+      nonce: `session-${randomBytes(18).toString("base64url")}`,
     });
     const token = this.#encode(grant);
     return {
@@ -182,7 +182,11 @@ export class CustomerDashboardAccessCodec {
       if (match?.[1] === undefined) {
         return false;
       }
-      const actual = Buffer.from(match[1], "base64url");
+      const encodedActual = match[1];
+      const actual = Buffer.from(encodedActual, "base64url");
+      if (actual.toString("base64url") !== encodedActual) {
+        return false;
+      }
       const expected = Buffer.from(
         this.#csrfToken(sessionToken).slice("csrf.v1.".length),
         "base64url",

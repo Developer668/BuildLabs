@@ -39,9 +39,7 @@ describe("raster claim inspector", () => {
   });
 
   async function createWorkspace(): Promise<string> {
-    const directory = await mkdtemp(
-      join(tmpdir(), "buildlabs-raster-claims-"),
-    );
+    const directory = await mkdtemp(join(tmpdir(), "buildlabs-raster-claims-"));
     workspaces.push(directory);
     return directory;
   }

@@ -11,6 +11,8 @@ dist/
 /build/
 out/
 .next/
+.vinext/
+.wrangler/
 *.tsbuildinfo
 
 # Local BuildLabs runtime state

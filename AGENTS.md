@@ -87,8 +87,12 @@ sanitized build activity, and durable verification/post-dispatch access emails.
 SQLite schema v6 maintains and backfills a content-free pending-dashboard-login
 bit so terminal projects remain in reconciliation until the exact login effect
 settles; retry timing and failure attribution stay scoped to that effect.
-Browser voice and the customer-facing dashboard UI remain separate systems. The
-target voice flow
+The local `apps/voice-intake` workspace reads a bounded ElevenLabs archive on
+demand without a second transcript store and forwards signature-verified,
+provider-complete sessions into the protected orchestration intake endpoint
+with a stable idempotency key. It never asserts voice-captured email ownership or
+research consent. Browser voice and the customer-facing dashboard UI remain
+separate systems. The target voice flow
 captures name/email/phone without verbal read-back; email ownership is verified
 by the one-time link. A future Plivo transport adapter will carry the same
 normalized intake contract, but is not wired yet.

@@ -30,7 +30,10 @@ for **proving the result is correct before the customer ever sees it.**
 > sanitized build activity, last-known-good release projection, and a
 > content-free pending-login reconciliation index that keeps terminal projects
 > recoverable.
-> Browser voice, the Next.js/CopilotKit customer UI, SSE, a customer-renderable
+> The local Voice Intake workspace reads a bounded ElevenLabs archive on demand
+> without a second transcript store and forwards signature-verified completed
+> sessions into the protected, idempotent orchestration intake endpoint. Browser
+> voice itself, the Next.js/CopilotKit customer UI, SSE, a customer-renderable
 > raster WIP gateway, server-side session revocation/logout/renewal, edge rate
 > limits, and provider-backed end-to-end proof remain separate work. Production
 > deployment and customer delivery still require configured Stripe, Resend,
