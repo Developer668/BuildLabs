@@ -21,8 +21,11 @@ The desktop page has five persistent areas:
 5. The bottom review bar drafts operator requests without applying them
    automatically.
 
-The layout uses a compact graphite palette, square-to-soft corners, restrained
-blue accents, and status colors only when they communicate meaning. It
+The layout uses near-black and charcoal surfaces, crisp white text, and a
+saturated cobalt accent. It does not use pale blue as a general surface color.
+Green, amber, and red remain limited to meaningful status communication. The
+selected transparent BuildLabs mark is shown directly on the navigation surface,
+without a baked or component-level logo background. The visual system
 intentionally avoids neon gradients, floating glass cards, oversized empty
 space, and decorative “AI” effects.
 
@@ -93,6 +96,20 @@ The left side shows the selected slot, elapsed time, and a data-source badge:
 
 Selecting a candidate from a multi-monitor layout changes the active candidate.
 Selecting a card from the filmstrip returns to Focus mode.
+
+### Workspace sizing
+
+Desktop operators can resize the existing workspace without changing its
+structure:
+
+- the narrow vertical splitter adjusts the workbench and right inspector widths;
+- the narrow horizontal splitter above the candidate filmstrip trades space
+  between the live monitors and candidate cards;
+- arrow keys work when either splitter is focused;
+- both splitters disappear in stacked tablet and mobile layouts.
+
+The default dimensions remain the original Studio proportions. Resizing changes
+only the operator's current browser view and never affects a build or candidate.
 
 ### Update and evidence controls
 

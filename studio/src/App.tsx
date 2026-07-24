@@ -43,7 +43,9 @@ import {
   X,
 } from "lucide-react";
 import {
+  type CSSProperties,
   type ComponentType,
+  type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
   useMemo,
@@ -133,6 +135,8 @@ export function App() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [reviewDraft, setReviewDraft] = useState("");
+  const [inspectorWidth, setInspectorWidth] = useState(430);
+  const [candidateHeight, setCandidateHeight] = useState(207);
   const [toast, setToast] = useState<{
     id: number;
     icon: "search" | "bell" | "contract" | "evidence";
@@ -252,6 +256,58 @@ export function App() {
     setDraft("");
   };
 
+  const beginWorkspaceResize = (
+    axis: "columns" | "rows",
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const startInspectorWidth = inspectorWidth;
+    const startCandidateHeight = candidateHeight;
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+
+    document.body.style.cursor =
+      axis === "columns" ? "col-resize" : "row-resize";
+    document.body.style.userSelect = "none";
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      if (axis === "columns") {
+        setInspectorWidth(
+          Math.min(
+            620,
+            Math.max(310, startInspectorWidth + startX - moveEvent.clientX),
+          ),
+        );
+        return;
+      }
+
+      setCandidateHeight(
+        Math.min(
+          340,
+          Math.max(118, startCandidateHeight + startY - moveEvent.clientY),
+        ),
+      );
+    };
+
+    const stopResize = () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", stopResize);
+      window.removeEventListener("pointercancel", stopResize);
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", stopResize);
+    window.addEventListener("pointercancel", stopResize);
+  };
+
   return (
     <div className="app-shell">
       <IconRail
@@ -340,7 +396,15 @@ export function App() {
             </div>
           </section>
 
-          <div className="studio-grid">
+          <div
+            className="studio-grid"
+            style={
+              {
+                "--inspector-width": `${inspectorWidth}px`,
+                "--candidate-height": `${candidateHeight}px`,
+              } as CSSProperties
+            }
+          >
             <section className="workbench">
               <MonitorArea
                 layout={layout}
@@ -360,6 +424,20 @@ export function App() {
                 onChange={setMonitorTab}
                 previewUrl={selection.preview?.url}
               />
+              <button
+                className="workspace-resizer workspace-resizer-horizontal"
+                type="button"
+                aria-label="Resize monitor and candidate areas"
+                title="Drag to resize monitor and candidate areas"
+                onPointerDown={(event) => beginWorkspaceResize("rows", event)}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowUp") {
+                    setCandidateHeight((height) => Math.min(340, height + 16));
+                  } else if (event.key === "ArrowDown") {
+                    setCandidateHeight((height) => Math.max(118, height - 16));
+                  }
+                }}
+              />
               <CandidateStrip
                 runs={projectRuns}
                 selectedId={selectedRun.run.id}
@@ -370,6 +448,21 @@ export function App() {
                 }}
               />
             </section>
+
+            <button
+              className="workspace-resizer workspace-resizer-vertical"
+              type="button"
+              aria-label="Resize workspace and activity panel"
+              title="Drag to resize workspace and activity panel"
+              onPointerDown={(event) => beginWorkspaceResize("columns", event)}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowLeft") {
+                  setInspectorWidth((width) => Math.min(620, width + 20));
+                } else if (event.key === "ArrowRight") {
+                  setInspectorWidth((width) => Math.max(310, width - 20));
+                }
+              }}
+            />
 
             <Inspector
               activeTab={inspectorTab}
@@ -988,9 +1081,7 @@ function MonitorTabs({
             <ExternalLink size={14} />
             Open raw preview
           </a>
-        ) : (
-          <span className="raw-preview-label">Raw WIP · operator only</span>
-        )}
+        ) : null}
       </div>
     </div>
   );
