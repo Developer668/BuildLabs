@@ -61,11 +61,21 @@ export interface CustomerDashboardProjectView {
   };
   deliverables: {
     frozenProvenPreview: {
+      contractVersion: number;
+      proposalVersion: number;
+      revisionHash: string;
+      artifactDigest: string;
       url: string;
       expiresAt: string;
       verifiedAt: string;
     } | null;
     production: {
+      contractVersion: number;
+      proposalVersion: number;
+      revisionHash: string;
+      artifactDigest: string;
+      releaseVersion: number;
+      imageDigest: string;
       url: string;
       verifiedAt: string;
     } | null;
@@ -196,15 +206,25 @@ export function buildCustomerDashboardProjectView(
     deliverables: {
       frozenProvenPreview: frozenPreview
         ? {
-            url: frozenPreview.url,
-            expiresAt: frozenPreview.expiresAt,
-            verifiedAt: frozenPreview.verifiedAt,
+            contractVersion: frozenPreview.batch.contractVersion,
+            proposalVersion: frozenPreview.receipt.proposalVersion,
+            revisionHash: frozenPreview.receipt.revisionHash,
+            artifactDigest: frozenPreview.receipt.artifactDigest,
+            url: frozenPreview.receipt.url,
+            expiresAt: frozenPreview.receipt.expiresAt,
+            verifiedAt: frozenPreview.receipt.verifiedAt,
           }
         : null,
       production: production
         ? {
-            url: production.url,
-            verifiedAt: production.verifiedAt,
+            contractVersion: production.batch.contractVersion,
+            proposalVersion: production.receipt.proposalVersion,
+            revisionHash: production.receipt.revisionHash,
+            artifactDigest: production.receipt.artifactDigest,
+            releaseVersion: production.receipt.releaseVersion,
+            imageDigest: production.receipt.imageDigest,
+            url: production.receipt.url,
+            verifiedAt: production.receipt.verifiedAt,
           }
         : null,
     },
@@ -271,7 +291,12 @@ function unavailableRunView(
 function latestFrozenPreview(
   project: ProjectAggregate,
   now: Date,
-): ProjectAggregate["previews"][number] | undefined {
+):
+  | {
+      receipt: ProjectAggregate["previews"][number];
+      batch: BuildBatch;
+    }
+  | undefined {
   if (!Number.isFinite(now.getTime())) {
     return undefined;
   }
@@ -282,13 +307,49 @@ function latestFrozenPreview(
         preview.httpsHealthy &&
         Date.parse(preview.expiresAt) > now.getTime(),
     )
-    .sort((left, right) => right.verifiedAt.localeCompare(left.verifiedAt))[0];
+    .flatMap((receipt) => {
+      const batch = matchingBuildBatch(project, receipt);
+      return batch ? [{ receipt, batch }] : [];
+    })
+    .sort((left, right) =>
+      right.receipt.verifiedAt.localeCompare(left.receipt.verifiedAt),
+    )[0];
 }
 
-function latestProductionDeployment(
-  project: ProjectAggregate,
-): ProjectAggregate["deployments"][number] | undefined {
+function latestProductionDeployment(project: ProjectAggregate):
+  | {
+      receipt: ProjectAggregate["deployments"][number];
+      batch: BuildBatch;
+    }
+  | undefined {
   return project.deployments
     .filter((deployment) => deployment.httpsHealthy)
-    .sort((left, right) => right.verifiedAt.localeCompare(left.verifiedAt))[0];
+    .flatMap((receipt) => {
+      const batch = matchingBuildBatch(project, receipt);
+      return batch ? [{ receipt, batch }] : [];
+    })
+    .sort((left, right) =>
+      right.receipt.verifiedAt.localeCompare(left.receipt.verifiedAt),
+    )[0];
+}
+
+function matchingBuildBatch(
+  project: ProjectAggregate,
+  receipt: {
+    projectId: string;
+    batchId: string;
+    proposalVersion: number;
+    proposalDigest: string;
+  },
+): BuildBatch | undefined {
+  if (receipt.projectId !== project.projectId) {
+    return undefined;
+  }
+  return project.buildBatches.find(
+    (batch) =>
+      batch.batchId === receipt.batchId &&
+      batch.projectId === project.projectId &&
+      batch.proposalVersion === receipt.proposalVersion &&
+      batch.proposalDigest === receipt.proposalDigest,
+  );
 }

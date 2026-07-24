@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,6 +26,7 @@ import { artifact, assignment, passingEvidence } from "./fixtures.js";
 describe("HTTP server", () => {
   const token = "t".repeat(32);
   const elevenLabsToolSecret = "e".repeat(32);
+  const elevenLabsCapabilitySecret = "c".repeat(32);
   let store: SqliteRunStore;
   let server: ReturnType<typeof createHttpServer>;
   let wakeCount: number;
@@ -127,6 +128,7 @@ describe("HTTP server", () => {
         FIREWORKS_API_KEY: "f".repeat(20),
         BRAINTRUST_API_KEY: "b".repeat(20),
         ELEVENLABS_TOOL_SECRET: elevenLabsToolSecret,
+        ELEVENLABS_CAPABILITY_SECRET: elevenLabsCapabilitySecret,
         CODERABBIT_AUTH_MODE: "oauth",
       }),
       store,
@@ -472,6 +474,19 @@ describe("HTTP server", () => {
     }
   });
 
+  it("requires a controller-only key for ElevenLabs cancellation capabilities", () => {
+    expect(() =>
+      loadConfig({
+        NODE_ENV: "test",
+        DAYTONA_API_KEY: "d".repeat(20),
+        FIREWORKS_API_KEY: "f".repeat(20),
+        BRAINTRUST_API_KEY: "b".repeat(20),
+        ELEVENLABS_TOOL_SECRET: elevenLabsToolSecret,
+        CODERABBIT_AUTH_MODE: "oauth",
+      }),
+    ).toThrow(/ELEVENLABS_CAPABILITY_SECRET/u);
+  });
+
   it("exposes bounded ElevenLabs tools for real studio operations", async () => {
     const run = store.createRun(assignment("http-elevenlabs-tools")).run;
     const conversationId = "conv_http_sensitive";
@@ -545,6 +560,15 @@ describe("HTTP server", () => {
       previewAvailable: false,
     });
     expect(candidate.cancellationCapability).toMatch(/^v1\.[^.]+\.[^.]+$/);
+    const [, encodedCapability, capabilitySignature] =
+      candidate.cancellationCapability.split(".");
+    const signatureFor = (secretValue: string) =>
+      createHmac("sha256", secretValue)
+        .update("buildlabs-elevenlabs-cancel-capability-v1:")
+        .update(encodedCapability!)
+        .digest("base64url");
+    expect(capabilitySignature).toBe(signatureFor(elevenLabsCapabilitySecret));
+    expect(capabilitySignature).not.toBe(signatureFor(elevenLabsToolSecret));
 
     const missingCapability = await server.inject({
       method: "POST",
@@ -797,7 +821,13 @@ describe("HTTP server", () => {
       .split("\n\n")
       .filter(Boolean)
       .map((record) => {
-        const event: unknown = JSON.parse(record.slice("data: ".length));
+        const data = record
+          .split("\n")
+          .find((line) => line.startsWith("data: "));
+        if (!data) {
+          throw new Error("AG-UI SSE record is missing its data line");
+        }
+        const event: unknown = JSON.parse(data.slice("data: ".length));
         if (!event || typeof event !== "object" || !("type" in event)) {
           throw new Error("AG-UI event is missing its type");
         }

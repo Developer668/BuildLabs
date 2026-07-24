@@ -8,7 +8,24 @@ import type {
   RasterClaimReceipt,
   ReviewReceipt,
 } from "../domain/evidence.js";
+import { CodeRabbitReviewAttestationSchema } from "../domain/evidence.js";
 import { canonicalJson, digestJson, sha256 } from "../lib/canonical-json.js";
+import { CODERABBIT_HANDSHAKE_REVIEW_FLAGS } from "../adapters/coderabbit/capability.js";
+import {
+  classifyCodeRabbitFinding,
+  CODERABBIT_CONFIG_SCHEMA_DIGEST,
+  CODERABBIT_CONTROLLER_CONFIG_DIGEST,
+  CODERABBIT_CONTROLLER_RULES_DIGEST,
+  CODERABBIT_DOCTOR_DIGEST,
+  CODERABBIT_EVENT_SCHEMA_DIGEST,
+  CODERABBIT_POLICY_PACK_DIGEST,
+  CODERABBIT_POLICY_PACK_VERSION,
+  CODERABBIT_REQUIRED_REVIEW_FLAGS,
+  CODERABBIT_SUPPORTED_EVENT_KINDS,
+  CODERABBIT_TOOL_POLICY,
+  CODERABBIT_TOOL_POLICY_DIGEST,
+  isSupportedCodeRabbitVersion,
+} from "../adapters/coderabbit/policy-pack.js";
 import { DEPENDENCY_BOOTSTRAP_COMMAND } from "./dependency-bootstrap.js";
 import {
   CONTAINER_BUILD_COMMAND,
@@ -69,6 +86,9 @@ export function decideProof(
   const receipts = allReceipts.filter(
     (receipt) => receipt.revisionHash === revisionHash,
   );
+  if (new Set(receipts.map((receipt) => receipt.runId)).size > 1) {
+    reasons.push("Proof evidence mixes multiple controller run identities");
+  }
 
   const dockerfile = latest(
     receipts,
@@ -284,10 +304,47 @@ export function decideProof(
     }
   }
 
-  const review = latest(receipts, isReviewReceipt);
-  if (!review) {
+  const reviewReceipts = receipts.filter(isReviewReceipt);
+  const legacyReviews = reviewReceipts.filter(
+    (receipt) => receipt.attestation === undefined,
+  );
+  const invalidReviewKinds = reviewReceipts.filter(
+    (receipt) =>
+      receipt.attestation !== undefined &&
+      receipt.attestation.reviewKind !== "authoritative_full" &&
+      receipt.attestation.reviewKind !== "advisory_light",
+  );
+  const authoritativeReviews = reviewReceipts.filter(
+    (receipt) => receipt.attestation?.reviewKind === "authoritative_full",
+  );
+
+  if (reviewReceipts.length === 0) {
     reasons.push("Missing CodeRabbit review evidence");
-  } else {
+  }
+  if (legacyReviews.length > 0) {
+    reasons.push(
+      "CodeRabbit review evidence contains a legacy unattested review",
+    );
+  }
+  if (invalidReviewKinds.length > 0) {
+    reasons.push("CodeRabbit review evidence contains an invalid review kind");
+  }
+  if (authoritativeReviews.length === 0 && reviewReceipts.length > 0) {
+    reasons.push(
+      "Missing authoritative full CodeRabbit review evidence for the frozen revision",
+    );
+  } else if (authoritativeReviews.length > 1) {
+    reasons.push(
+      "Multiple authoritative full CodeRabbit reviews target the frozen revision",
+    );
+  }
+
+  const review =
+    authoritativeReviews.length === 1 ? authoritativeReviews[0] : undefined;
+  if (review) {
+    reasons.push(
+      ...codeRabbitAttestationFailures(contract, revisionHash, review),
+    );
     const criticalCount = review.findings.filter(
       (finding) => finding.severity === "critical",
     ).length;
@@ -436,6 +493,342 @@ export function decideProof(
   };
 }
 
+function codeRabbitAttestationFailures(
+  contract: AcceptanceContract,
+  revisionHash: string,
+  review: ReviewReceipt,
+): string[] {
+  const failures: string[] = [];
+  const rawAttestation = review.attestation;
+  if (!rawAttestation) {
+    return ["CodeRabbit review is missing its controller attestation"];
+  }
+
+  if (!review.expectedAttestationDigest) {
+    failures.push(
+      "CodeRabbit review is missing its expected controller attestation digest",
+    );
+  } else if (review.expectedAttestationDigest !== digestJson(rawAttestation)) {
+    failures.push(
+      "CodeRabbit review controller attestation digest does not match",
+    );
+  }
+
+  const parsedAttestation =
+    CodeRabbitReviewAttestationSchema.safeParse(rawAttestation);
+  if (!parsedAttestation.success) {
+    failures.push("CodeRabbit review controller attestation schema is invalid");
+    return failures;
+  }
+  const attestation = parsedAttestation.data;
+
+  if (
+    attestation.schemaVersion !== 1 ||
+    attestation.reviewKind !== "authoritative_full"
+  ) {
+    failures.push(
+      "CodeRabbit review does not use the authoritative attestation schema",
+    );
+  }
+  if (attestation.capabilityState !== "proof-integrated") {
+    failures.push(
+      "CodeRabbit review capability was not integrated into the proof gate",
+    );
+  }
+
+  const expectedAuthorityKey = digestJson({
+    schemaVersion: 1,
+    runId: review.runId,
+    sourceDigest: revisionHash,
+  });
+  if (attestation.authorityKey !== expectedAuthorityKey) {
+    failures.push(
+      "CodeRabbit review authority does not match the run and frozen source",
+    );
+  }
+  if (
+    attestation.sourceDigest !== revisionHash ||
+    attestation.sourceDigest !== review.revisionHash
+  ) {
+    failures.push(
+      "CodeRabbit review attestation does not match the frozen source digest",
+    );
+  }
+  if (attestation.contractDigest !== digestJson(contract)) {
+    failures.push(
+      "CodeRabbit review attestation does not match the acceptance contract",
+    );
+  }
+  if (attestation.findingSetDigest !== digestJson(review.findings)) {
+    failures.push(
+      "CodeRabbit review attestation does not match its normalized findings",
+    );
+  }
+  if (
+    attestation.reviewContextDigest !== digestJson(attestation.reviewContext) ||
+    attestation.scopeDigest !== digestJson(attestation.scope)
+  ) {
+    failures.push(
+      "CodeRabbit review context or scope digest does not match its evidence",
+    );
+  }
+  if (
+    attestation.reviewContext.reviewType !== "committed" ||
+    attestation.reviewContext.currentBranch !== "candidate" ||
+    attestation.reviewContext.baseBranch !== "main" ||
+    attestation.scope.reviewKind !== "authoritative_full" ||
+    attestation.scope.reviewType !== attestation.reviewContext.reviewType ||
+    attestation.scope.currentBranch !==
+      attestation.reviewContext.currentBranch ||
+    attestation.scope.baseBranch !== attestation.reviewContext.baseBranch ||
+    attestation.scope.baseCommit !== attestation.reviewContext.baseCommit ||
+    attestation.scope.workingDirectoryDigest !==
+      attestation.reviewContext.workingDirectoryDigest ||
+    attestation.scope.reviewedFileCount < 1
+  ) {
+    failures.push("CodeRabbit review scope evidence is not authoritative");
+  }
+
+  if (
+    attestation.policyPackVersion !== CODERABBIT_POLICY_PACK_VERSION ||
+    attestation.policyPackDigest !== CODERABBIT_POLICY_PACK_DIGEST
+  ) {
+    failures.push(
+      "CodeRabbit review does not use the current controller policy pack",
+    );
+  }
+  if (attestation.configSchemaDigest !== CODERABBIT_CONFIG_SCHEMA_DIGEST) {
+    failures.push(
+      "CodeRabbit review configuration schema digest does not match the controller",
+    );
+  }
+  if (attestation.configDigest !== CODERABBIT_CONTROLLER_CONFIG_DIGEST) {
+    failures.push(
+      "CodeRabbit review configuration digest does not match the controller",
+    );
+  }
+  if (attestation.rulesDigest !== CODERABBIT_CONTROLLER_RULES_DIGEST) {
+    failures.push(
+      "CodeRabbit review rules digest does not match the controller",
+    );
+  }
+  if (attestation.toolPolicyDigest !== CODERABBIT_TOOL_POLICY_DIGEST) {
+    failures.push(
+      "CodeRabbit review tool policy digest does not match the controller",
+    );
+  }
+  if (attestation.eventSchemaDigest !== CODERABBIT_EVENT_SCHEMA_DIGEST) {
+    failures.push(
+      "CodeRabbit review event schema digest does not match the controller",
+    );
+  }
+  if (
+    !review.policyDigest ||
+    !review.expectedPolicyDigest ||
+    attestation.policyDigest !== review.policyDigest ||
+    attestation.policyDigest !== review.expectedPolicyDigest
+  ) {
+    failures.push(
+      "CodeRabbit review attestation is not bound to the controller review policy",
+    );
+  }
+
+  const cliVersion = parseCodeRabbitVersion(attestation.cliVersion);
+  if (!cliVersion || !isSupportedCodeRabbitVersion(cliVersion)) {
+    failures.push("CodeRabbit review CLI version is outside the allowed range");
+  }
+  if (
+    attestation.cliExecutableDigestBefore !==
+      attestation.cliExecutableDigestAfter ||
+    attestation.cliExecutableDigestBefore !==
+      attestation.capability.cliExecutableDigest
+  ) {
+    failures.push("CodeRabbit review CLI executable changed during review");
+  }
+  if (
+    attestation.capabilityDigest !== digestJson(attestation.capability) ||
+    attestation.capability.state !== "healthy" ||
+    attestation.capability.policyPackVersion !==
+      CODERABBIT_POLICY_PACK_VERSION ||
+    attestation.capability.policyPackDigest !== CODERABBIT_POLICY_PACK_DIGEST ||
+    attestation.capability.cliVersion !== attestation.cliVersion ||
+    attestation.capability.reviewFlagsDigest !==
+      digestJson(attestation.capability.reviewFlags) ||
+    !sameStrings(
+      attestation.capability.reviewFlags,
+      CODERABBIT_HANDSHAKE_REVIEW_FLAGS,
+    ) ||
+    !sameStrings(
+      attestation.capability.supportedEventKinds,
+      CODERABBIT_SUPPORTED_EVENT_KINDS,
+    ) ||
+    !attestation.capability.agentJsonl ||
+    !attestation.capability.authenticated ||
+    attestation.capability.updatePolicy !== "disabled-and-digest-pinned" ||
+    attestation.capability.serviceConnectivity !== "healthy" ||
+    attestation.capability.controllerConfig !== "supported" ||
+    attestation.capability.toolSupport !== "disabled-controller-policy" ||
+    canonicalJson(attestation.capability.doctor) !==
+      canonicalJson(attestation.doctor)
+  ) {
+    failures.push(
+      "CodeRabbit review capability digest does not match its healthy handshake",
+    );
+  }
+  const expectedReviewFlagsDigest = digestJson(
+    CODERABBIT_REQUIRED_REVIEW_FLAGS,
+  );
+  if (attestation.reviewFlagsDigest !== expectedReviewFlagsDigest) {
+    failures.push(
+      "CodeRabbit review flags digest does not match the authoritative full review",
+    );
+  }
+  if (attestation.updatePolicy !== "disabled-and-digest-pinned") {
+    failures.push("CodeRabbit review update policy is not proof-safe");
+  }
+  if (attestation.authentication !== "authenticated") {
+    failures.push("CodeRabbit review was not authenticated");
+  }
+  if (
+    attestation.doctor.passed !== 8 ||
+    attestation.doctor.warnings !== 1 ||
+    attestation.doctor.failed !== 0 ||
+    attestation.doctor.digest !== CODERABBIT_DOCTOR_DIGEST
+  ) {
+    failures.push("CodeRabbit review doctor checks were not healthy");
+  }
+  if (attestation.serviceConnectivity !== "healthy") {
+    failures.push("CodeRabbit review service connectivity was not healthy");
+  }
+  if (!attestation.agentJsonl) {
+    failures.push("CodeRabbit review did not use agent-mode JSONL");
+  }
+  if (attestation.terminalState !== "review_completed") {
+    failures.push(
+      "CodeRabbit review is missing successful terminal completion",
+    );
+  }
+  if (
+    attestation.eventCounts.reviewContext !== 1 ||
+    attestation.eventCounts.status < 1 ||
+    attestation.eventCounts.finding !== review.findings.length ||
+    attestation.eventCounts.complete !== 1 ||
+    attestation.eventCounts.error !== 0
+  ) {
+    failures.push(
+      "CodeRabbit review event counts do not prove one complete full review",
+    );
+  }
+  if (attestation.attempts !== attestation.retryReasons.length + 1) {
+    failures.push(
+      "CodeRabbit review attempts do not match its bounded retry evidence",
+    );
+  }
+
+  const expectedSeverityCounts = {
+    critical: 0,
+    major: 0,
+    minor: 0,
+    trivial: 0,
+    info: 0,
+  };
+  const expectedCategoryCounts = new Map<string, number>();
+  let findingMetadataMatches = true;
+  let findingRangesAreValid = true;
+  for (const finding of review.findings) {
+    expectedSeverityCounts[finding.severity] += 1;
+    if (finding.category) {
+      expectedCategoryCounts.set(
+        finding.category,
+        (expectedCategoryCounts.get(finding.category) ?? 0) + 1,
+      );
+    }
+
+    const classification = classifyCodeRabbitFinding(finding);
+    if (
+      finding.category !== classification.category ||
+      finding.governingInvariant !== classification.governingInvariant ||
+      finding.severity !== classification.severity ||
+      finding.controllerRuleId !== classification.ruleId
+    ) {
+      findingMetadataMatches = false;
+    }
+    const hasStartLine = finding.startLine !== undefined;
+    const hasEndLine = finding.endLine !== undefined;
+    if (
+      hasStartLine !== hasEndLine ||
+      (hasStartLine &&
+        hasEndLine &&
+        (finding.endLine as number) < (finding.startLine as number))
+    ) {
+      findingRangesAreValid = false;
+    }
+  }
+  if (
+    canonicalJson(attestation.severityCounts) !==
+    canonicalJson(expectedSeverityCounts)
+  ) {
+    failures.push(
+      "CodeRabbit review severity counts do not match its findings",
+    );
+  }
+  const normalizedCategoryCounts = [...expectedCategoryCounts]
+    .map(([category, count]) => ({ category, count }))
+    .sort((left, right) =>
+      Buffer.compare(
+        Buffer.from(left.category, "utf8"),
+        Buffer.from(right.category, "utf8"),
+      ),
+    );
+  if (
+    review.findings.some((finding) => !finding.category) ||
+    canonicalJson(attestation.categoryCounts) !==
+      canonicalJson(normalizedCategoryCounts)
+  ) {
+    failures.push(
+      "CodeRabbit review category counts do not match its findings",
+    );
+  }
+  if (!findingMetadataMatches) {
+    failures.push(
+      "CodeRabbit review findings do not match controller severity classification",
+    );
+  }
+  if (!findingRangesAreValid) {
+    failures.push("CodeRabbit review contains an invalid finding line range");
+  }
+
+  if (
+    !sameStrings(
+      attestation.configuredTools,
+      CODERABBIT_TOOL_POLICY.configuredTools,
+    ) ||
+    attestation.observedTools.length !== 0 ||
+    attestation.toolCoverage !== "disabled-controller-policy"
+  ) {
+    failures.push(
+      "CodeRabbit review tool coverage does not match controller policy",
+    );
+  }
+
+  return failures;
+}
+
+function parseCodeRabbitVersion(
+  version: string,
+): readonly [number, number, number] | undefined {
+  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
+  if (!match) {
+    return undefined;
+  }
+  const parsed = [
+    Number(match[1]),
+    Number(match[2]),
+    Number(match[3]),
+  ] as const;
+  return parsed.every(Number.isSafeInteger) ? parsed : undefined;
+}
+
 function hasScreenshotTileDigests(
   digests: string[] | undefined,
 ): digests is string[] {
@@ -447,7 +840,10 @@ function hasScreenshotTileDigests(
   );
 }
 
-function sameStrings(left: string[], right: string[]): boolean {
+function sameStrings(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
   return (
     left.length === right.length &&
     left.every((value, index) => value === right[index])

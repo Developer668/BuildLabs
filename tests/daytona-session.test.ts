@@ -24,6 +24,7 @@ import {
   decideProofNetworkRequest,
   deleteDaytonaSessionIfPresent,
   deliveryContainerRunCommand,
+  executeBoundedSandboxCommandAsync,
   executeBoundedSandboxCommand,
   ensureDockerRuntime,
   hasSufficientReadablePixelEvidence,
@@ -34,8 +35,15 @@ import {
   recaptureExactPixelBaseline,
   RENDERED_PAGE_INSPECTOR_SOURCE,
 } from "../src/adapters/daytona/daytona-sandbox.js";
+import {
+  createDaytonaSnapshotAttestation,
+  DAYTONA_PINNED_SNAPSHOT_INPUTS,
+  DAYTONA_SNAPSHOT_ATTESTATION_SCHEMA,
+  writeDaytonaSnapshotAttestation,
+} from "../src/adapters/daytona/daytona-snapshot-attestation.js";
 import type { AppConfig } from "../src/config.js";
 import { sha256 } from "../src/lib/canonical-json.js";
+import { assignment } from "./fixtures.js";
 
 const screenshotTile = (label: string) => {
   const bytes = Buffer.concat([
@@ -50,6 +58,21 @@ const screenshotTile = (label: string) => {
 const TILE_ONE = screenshotTile("one");
 const TILE_TWO = screenshotTile("two");
 
+function commandEnvelope(stdout: string, exitCode = 0): string {
+  const bytes = Buffer.from(stdout, "utf8");
+  return [
+    "BUILDLABS_COMMAND_RESULT_V1",
+    String(exitCode),
+    String(bytes.byteLength),
+    "0",
+    String(bytes.byteLength),
+    "0",
+    bytes.toString("base64"),
+    "",
+    "",
+  ].join("\n");
+}
+
 function pixelBaselinePage(captures: readonly Buffer[]) {
   let captureIndex = 0;
   return {
@@ -62,6 +85,62 @@ function pixelBaselinePage(captures: readonly Buffer[]) {
         : Promise.reject(new Error("Unexpected pixel-baseline capture"));
     }),
   };
+}
+
+async function writeFreshSnapshotAttestation(
+  directory: string,
+  snapshotName: string,
+): Promise<string> {
+  const timestamp = new Date().toISOString();
+  const path = join(directory, "snapshot-attestation.json");
+  await writeDaytonaSnapshotAttestation(
+    path,
+    createDaytonaSnapshotAttestation({
+      schema: DAYTONA_SNAPSHOT_ATTESTATION_SCHEMA,
+      provisionerSourceSha256: "a".repeat(64),
+      imageInputs: DAYTONA_PINNED_SNAPSHOT_INPUTS,
+      snapshot: {
+        id: "snapshot-provider-id",
+        name: snapshotName,
+        state: "active",
+        ref: DAYTONA_PINNED_SNAPSHOT_INPUTS.baseImage,
+        sandboxClass: "container",
+        regionIds: ["us"],
+        resources: {
+          cpu: 2,
+          memoryGiB: 4,
+          diskGiB: 10,
+        },
+        buildInfo: {
+          snapshotRef: "snapshot-provider-ref",
+          dockerfileSha256: "b".repeat(64),
+          contextHashesSha256: "c".repeat(64),
+        },
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+      validation: {
+        validatedAt: timestamp,
+        chromiumVersion: "Chromium 140.0.7339.80",
+        dockerServerVersion: "28.3.3",
+        dindReady: true,
+        renderedChromiumProof: true,
+        staleDomRaceBlocked: true,
+        signedPreviewIngress: true,
+        resourceMetrics: {
+          latest: true,
+          historical: true,
+        },
+        networkBlockAll: {
+          directIpEgressBlocked: true,
+          registryEgressBlocked: true,
+          loopbackPreserved: true,
+          reappliedAfterRestart: true,
+        },
+      },
+    }),
+  );
+  return path;
 }
 
 describe("Daytona process session cleanup", () => {
@@ -164,6 +243,265 @@ describe("Daytona provider lifecycle", () => {
     finish?.();
     await Promise.all([first, second, third]);
     expect(asyncDispose).toHaveBeenCalledOnce();
+  });
+
+  it("probes persistent telemetry without quota data and surfaces write failure on close", async () => {
+    const directory = await mkdtemp(
+      join(tmpdir(), "buildlabs-daytona-readiness-"),
+    );
+    const blockingPath = join(directory, "not-a-directory");
+    await writeFile(blockingPath, "blocked");
+    const iterator = {
+      next: vi.fn().mockResolvedValue({ done: true, value: undefined }),
+      return: vi.fn().mockResolvedValue({ done: true, value: undefined }),
+      [Symbol.asyncIterator]() {
+        return this;
+      },
+    };
+    const asyncDispose = vi.fn().mockResolvedValue(undefined);
+    const client = {
+      list: vi.fn(() => iterator),
+      snapshot: {
+        get: vi.fn().mockResolvedValue({
+          name: "buildlabs-test",
+          state: "active",
+          cpu: 2,
+          mem: 4,
+          disk: 10,
+        }),
+      },
+      [Symbol.asyncDispose]: asyncDispose,
+    } as unknown as Daytona;
+    const provider = new DaytonaSandboxProvider(
+      {
+        DAYTONA_BUILD_SNAPSHOT: "buildlabs-test",
+        DAYTONA_TELEMETRY_PATH: join(blockingPath, "telemetry.jsonl"),
+      } as AppConfig,
+      client,
+    );
+
+    try {
+      const report = await provider.readinessReport();
+
+      expect(report.capabilities.controllerTelemetry).toMatchObject({
+        state: "degraded",
+        reasonCode: "controller_telemetry_write_failed",
+      });
+      expect(provider.telemetryEvents()).toContainEqual(
+        expect.objectContaining({
+          event: "lifecycle",
+          outcome: "observed",
+          values: { probe: "persistent-write" },
+        }),
+      );
+      await expect(provider.close()).rejects.toThrow(
+        "did not complete deterministic cleanup",
+      );
+      expect(asyncDispose).toHaveBeenCalledOnce();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("retries deterministic deletion when post-create validation fails", async () => {
+    const refreshFailure = new Error("sandbox refresh failed");
+    const deleteSandbox = vi.fn().mockResolvedValue(undefined);
+    const sandbox = {
+      id: "created-before-refresh-failure",
+      refreshData: vi.fn().mockRejectedValue(refreshFailure),
+      delete: deleteSandbox,
+    } as unknown as Sandbox;
+    const client = {
+      create: vi.fn().mockResolvedValue(sandbox),
+    } as unknown as Daytona;
+    const provider = new DaytonaSandboxProvider(
+      {
+        DAYTONA_BUILD_SNAPSHOT: "buildlabs-test",
+        DAYTONA_WARM_POOL_ROLES: "",
+      } as AppConfig,
+      client,
+    );
+
+    await expect(
+      provider.create("run-cleanup", assignment("cleanup")),
+    ).rejects.toBe(refreshFailure);
+    expect(deleteSandbox).toHaveBeenCalledWith(120, true);
+  });
+
+  it("rejects a stale warm-pool sandbox whose claim marker already exists", async () => {
+    const snapshotName = "buildlabs-warm-test";
+    const directory = await mkdtemp(join(tmpdir(), "buildlabs-daytona-pool-"));
+    const deleteSandbox = vi.fn().mockResolvedValue(undefined);
+    const updateEnv = vi.fn().mockResolvedValue(undefined);
+    const executeCommand = vi.fn((command: string) => {
+      if (command === "pwd") {
+        return Promise.resolve({ exitCode: 0, result: "/workspace\n" });
+      }
+      if (command.includes(".buildlabs-controller-claimed")) {
+        return Promise.resolve({ exitCode: 1, result: "" });
+      }
+      return Promise.reject(new Error(`Unexpected command: ${command}`));
+    });
+    const sandbox = {
+      id: "pooled-sandbox-provider-id",
+      snapshot: snapshotName,
+      target: "us",
+      user: "daytona",
+      cpu: 2,
+      memory: 4,
+      disk: 10,
+      linkedSandboxId: null,
+      labels: {
+        "buildlabs.owner": "buildlabs-controller",
+        "buildlabs.managed": "true",
+        "buildlabs.role": "builder",
+      },
+      refreshData: vi.fn().mockResolvedValue(undefined),
+      updateEnv,
+      getWorkDir: vi.fn().mockResolvedValue("/workspace"),
+      process: { executeCommand },
+      delete: deleteSandbox,
+    } as unknown as Sandbox;
+    const create = vi.fn().mockResolvedValue(sandbox);
+    const observeWarmPool = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          items: [
+            {
+              id: "pooled-sandbox-provider-id",
+              warmPoolId: "warm-pool-provider-id",
+              snapshot: snapshotName,
+              target: "us",
+              user: "daytona",
+              cpu: 2,
+              memory: 4,
+              disk: 10,
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+
+    try {
+      const attestationPath = await writeFreshSnapshotAttestation(
+        directory,
+        snapshotName,
+      );
+      const provider = new DaytonaSandboxProvider(
+        {
+          DAYTONA_API_KEY: "d".repeat(20),
+          DAYTONA_API_URL: "https://app.daytona.io/api",
+          DAYTONA_BUILD_SNAPSHOT: snapshotName,
+          DAYTONA_TARGET: "us",
+          DAYTONA_SNAPSHOT_ATTESTATION_PATH: attestationPath,
+          DAYTONA_WARM_POOL_ROLES: "builder",
+          DAYTONA_OTEL_ENABLED: false,
+        } as AppConfig,
+        { create } as unknown as Daytona,
+        observeWarmPool,
+      );
+
+      await expect(
+        provider.create("run-stale-pool", assignment("stale-pool")),
+      ).rejects.toThrow("was not unused at controller acquisition");
+      expect(observeWarmPool).toHaveBeenCalledOnce();
+      expect(updateEnv).toHaveBeenCalledOnce();
+      expect(deleteSandbox).toHaveBeenCalledWith(120, true);
+      expect(provider.acquisitionMeasurements()).toEqual([
+        expect.objectContaining({
+          warmClaim: "verified_pool_hit",
+          outcome: "failed",
+        }),
+      ]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects an acquired sandbox linked to mutable builder state", async () => {
+    const deleteSandbox = vi.fn().mockResolvedValue(undefined);
+    const executeCommand = vi.fn((command: string) => {
+      if (command === "pwd") {
+        return Promise.resolve({ exitCode: 0, result: "/workspace\n" });
+      }
+      return Promise.reject(new Error(`Unexpected command: ${command}`));
+    });
+    const sandbox = {
+      id: "linked-sandbox-provider-id",
+      snapshot: "buildlabs-test",
+      target: "us",
+      user: "daytona",
+      cpu: 2,
+      memory: 4,
+      disk: 10,
+      linkedSandboxId: "mutable-builder-provider-id",
+      labels: {
+        "buildlabs.owner": "buildlabs-controller",
+        "buildlabs.managed": "true",
+        "buildlabs.role": "builder",
+      },
+      refreshData: vi.fn().mockResolvedValue(undefined),
+      getWorkDir: vi.fn().mockResolvedValue("/workspace"),
+      process: { executeCommand },
+      delete: deleteSandbox,
+    } as unknown as Sandbox;
+    const provider = new DaytonaSandboxProvider(
+      {
+        DAYTONA_BUILD_SNAPSHOT: "buildlabs-test",
+        DAYTONA_WARM_POOL_ROLES: "",
+      } as AppConfig,
+      { create: vi.fn().mockResolvedValue(sandbox) } as unknown as Daytona,
+    );
+
+    await expect(
+      provider.create("run-linked", assignment("linked")),
+    ).rejects.toThrow("did not match its role policy");
+    expect(
+      executeCommand.mock.calls.some(([command]) =>
+        command.includes(".buildlabs-controller-claimed"),
+      ),
+    ).toBe(false);
+    expect(deleteSandbox).toHaveBeenCalledWith(120, true);
+  });
+
+  it("separates healthy API access from a missing configured snapshot", async () => {
+    const iterator = {
+      next: vi.fn().mockResolvedValue({ done: true, value: undefined }),
+      return: vi.fn().mockResolvedValue({ done: true, value: undefined }),
+      [Symbol.asyncIterator]() {
+        return this;
+      },
+    };
+    const client = {
+      list: vi.fn(() => iterator),
+      snapshot: {
+        get: vi
+          .fn()
+          .mockRejectedValue(new DaytonaNotFoundError("missing", 404)),
+      },
+    } as unknown as Daytona;
+    const provider = new DaytonaSandboxProvider(
+      {
+        DAYTONA_API_KEY: "d".repeat(20),
+        DAYTONA_API_URL: "https://app.daytona.io/api",
+        DAYTONA_BUILD_SNAPSHOT: "missing-snapshot",
+        DAYTONA_WARM_POOL_ROLES: "",
+        DAYTONA_OTEL_ENABLED: false,
+      } as AppConfig,
+      client,
+    );
+
+    const report = await provider.readinessReport();
+
+    expect(report.capabilities.api.state).toBe("healthy");
+    expect(report.capabilities.regionResources).toMatchObject({
+      state: "degraded",
+      reasonCode: "snapshot_unavailable",
+    });
   });
 });
 
@@ -603,7 +941,9 @@ describe("Daytona delivery proof network seal", () => {
       return Promise.resolve();
     });
     const sandbox = {
+      networkBlockAll: true,
       updateNetworkSettings,
+      refreshData: vi.fn().mockResolvedValue(undefined),
       stop: vi.fn(() => {
         operations.push("stop");
         return Promise.resolve();
@@ -617,8 +957,25 @@ describe("Daytona delivery proof network seal", () => {
         return Promise.resolve();
       }),
       process: {
-        executeCommand: vi.fn(() => {
-          operations.push("docker-ready");
+        executeCommand: vi.fn((command: string) => {
+          if (command.includes("BUILDLABS_COMMAND_RESULT_V1")) {
+            return Promise.resolve({
+              exitCode: 0,
+              result: commandEnvelope("a".repeat(40)),
+            });
+          }
+          if (command.includes("proven-image.tar")) {
+            operations.push("image-archive");
+            return Promise.resolve({
+              exitCode: 0,
+              result: `sha256:${"1".repeat(64)}\n${"2".repeat(64)}\n`,
+            });
+          }
+          operations.push(
+            command.includes("proven-snapshot-identity.json")
+              ? "snapshot-identity"
+              : "docker-ready",
+          );
           return Promise.resolve({ exitCode: 0, result: "" });
         }),
       },
@@ -630,6 +987,7 @@ describe("Daytona delivery proof network seal", () => {
       "verifier-delivery",
     );
 
+    await session.freeze();
     await session.sealNetworkForProof();
     await session.createSnapshot("buildlabs-promoted-snapshot");
 
@@ -642,12 +1000,72 @@ describe("Daytona delivery proof network seal", () => {
     });
     expect(operations).toEqual([
       "network-seal",
+      "image-archive",
+      "snapshot-identity",
       "stop",
       "snapshot",
       "start",
       "network-seal",
       "docker-ready",
     ]);
+  });
+
+  it("fails closed when block-all reads back false after snapshot restart", async () => {
+    const updateNetworkSettings = vi.fn().mockResolvedValue(undefined);
+    const dockerReady = vi
+      .fn<() => Promise<{ exitCode: number; result: string }>>()
+      .mockResolvedValue({ exitCode: 0, result: "" });
+    const executeCommand = vi.fn((command: string) =>
+      command.includes("BUILDLABS_COMMAND_RESULT_V1")
+        ? Promise.resolve({
+            exitCode: 0,
+            result: commandEnvelope("a".repeat(40)),
+          })
+        : command.includes("proven-image.tar")
+          ? Promise.resolve({
+              exitCode: 0,
+              result: `sha256:${"1".repeat(64)}\n${"2".repeat(64)}\n`,
+            })
+          : command.includes("proven-snapshot-identity.json")
+            ? Promise.resolve({ exitCode: 0, result: "" })
+            : dockerReady(),
+    );
+    const sandbox = {
+      networkBlockAll: true,
+      updateNetworkSettings,
+      refreshData: vi
+        .fn()
+        .mockResolvedValueOnce(undefined)
+        .mockImplementationOnce(() => {
+          sandbox.networkBlockAll = false;
+          return Promise.resolve();
+        }),
+      stop: vi.fn().mockResolvedValue(undefined),
+      _experimental_createSnapshot: vi.fn().mockResolvedValue(undefined),
+      start: vi.fn().mockResolvedValue(undefined),
+      process: {
+        executeCommand,
+      },
+    } as unknown as Sandbox & { networkBlockAll: boolean };
+    const session = new DaytonaSandboxSession(
+      sandbox,
+      "/workspace",
+      65_536,
+      "verifier-delivery",
+    );
+
+    await session.freeze();
+    executeCommand.mockClear();
+    await session.sealNetworkForProof();
+    await expect(
+      session.createSnapshot("buildlabs-promoted-snapshot"),
+    ).rejects.toThrow("did not retain networkBlockAll");
+    expect(updateNetworkSettings).toHaveBeenCalledTimes(2);
+    expect(dockerReady).not.toHaveBeenCalled();
+    expect(executeCommand).toHaveBeenCalledTimes(2);
+    await expect(
+      session.startContainerPreview("buildlabs-candidate", 3_000),
+    ).rejects.toThrow("network-sealed Daytona delivery verifier");
   });
 });
 
@@ -1311,5 +1729,48 @@ describe("Daytona command output containment", () => {
       ),
     ).rejects.toBe(cancellation);
     expect(sandboxProcess.executeCommand).not.toHaveBeenCalled();
+  });
+
+  it("uses a persistent async session for long commands and records cleanup", async () => {
+    let envelope = "";
+    const processPort = {
+      createSession: vi.fn().mockResolvedValue(undefined),
+      executeSessionCommand: vi.fn(
+        (_sessionId: string, request: { command: string }) => {
+          envelope = execFileSync("/bin/bash", ["-lc", request.command], {
+            encoding: "utf8",
+            maxBuffer: 4_096,
+          });
+          return Promise.resolve({ cmdId: "async-command" });
+        },
+      ),
+      getSessionCommand: vi.fn().mockResolvedValue({ exitCode: 0 }),
+      getSessionCommandLogs: vi.fn(() =>
+        Promise.resolve({ stdout: envelope, stderr: "", output: envelope }),
+      ),
+      deleteSession: vi.fn().mockResolvedValue(undefined),
+    };
+    const deleteSandbox = vi.fn().mockResolvedValue(undefined);
+
+    const execution = await executeBoundedSandboxCommandAsync(
+      {
+        id: "async-sandbox",
+        process: processPort,
+        delete: deleteSandbox,
+      } as unknown as Pick<Sandbox, "delete" | "id" | "process">,
+      "printf async-ok",
+      process.cwd(),
+      300,
+      2_048,
+    );
+
+    expect(execution.result).toMatchObject({
+      exitCode: 0,
+      stdout: "async-ok",
+    });
+    expect(execution.receipt.commandSha256).toBe(sha256("printf async-ok"));
+    expect(execution.receipt.outcome).toBe("completed");
+    expect(processPort.deleteSession).toHaveBeenCalledOnce();
+    expect(deleteSandbox).not.toHaveBeenCalled();
   });
 });

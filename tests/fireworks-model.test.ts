@@ -164,7 +164,7 @@ describe("FireworksModel", () => {
     );
     expect(captured?.headers["x-session-affinity"]).toBe(context.trajectoryId);
     expect(captured?.body).toMatchObject({
-      model: "accounts/fireworks/models/kimi-k2p7-code",
+      model: "accounts/fireworks/models/glm-5p2",
       max_tokens: 8_192,
       reasoning_history: "interleaved",
       safe_tokenization: true,
@@ -211,7 +211,7 @@ describe("FireworksModel", () => {
             id: "chatcmpl-studio",
             object: "chat.completion",
             created: 1,
-            model: "accounts/fireworks/routers/kimi-k2p6-turbo",
+            model: "accounts/fireworks/models/kimi-k2p6",
             choices: [
               {
                 index: 0,
@@ -252,7 +252,7 @@ describe("FireworksModel", () => {
     );
 
     expect(capturedBody).toMatchObject({
-      model: "accounts/fireworks/routers/kimi-k2p6-turbo",
+      model: "accounts/fireworks/models/kimi-k2p6",
       max_tokens: 1_024,
       parallel_tool_calls: false,
     });
@@ -429,8 +429,8 @@ describe("FireworksModel", () => {
 
     expect(capabilityRequests).toBe(3);
     expect(capabilityBodies.map((body) => body.model)).toEqual([
-      "accounts/fireworks/models/kimi-k2p7-code",
-      "accounts/fireworks/routers/kimi-k2p6-turbo",
+      "accounts/fireworks/models/glm-5p2",
+      "accounts/fireworks/models/kimi-k2p6",
       "accounts/fireworks/models/kimi-k2p6",
     ]);
     capabilityBodies.slice(0, 2).forEach((capabilityBody) => {

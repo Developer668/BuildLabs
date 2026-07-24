@@ -20,10 +20,19 @@ import type {
   ModelPort,
   ModelRequestContext,
   ModelTurn,
+  ProviderModelPinEvidence,
   RasterClaimInspectionInput,
   RasterClaimInspectionOutput,
 } from "../../ports/index.js";
 import { RasterClaimInspectionError } from "../../ports/index.js";
+import {
+  FileFireworksPinStore,
+  FireworksCapabilityRouter,
+  FireworksCatalogClient,
+  type FireworksModelPin,
+  type FireworksModelRole,
+} from "./model-router.js";
+import { FireworksResponsesCapabilityProbe } from "./fireworks-responses.js";
 
 const OpaqueIdentifierSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const ReasoningContentSchema = z.string().min(1).max(262_144);
@@ -198,15 +207,32 @@ const EVALUATION_TOOL: ChatCompletionTool = {
   },
 };
 
+function pinEvidence(pin: FireworksModelPin): ProviderModelPinEvidence {
+  return {
+    role: pin.role,
+    modelResource: pin.modelId,
+    serviceTier: pin.serviceTier,
+    capabilitySnapshotDigest: pin.capabilitySnapshotDigest,
+    routerPolicyDigest: pin.routerPolicyDigest,
+    fallbackReason: pin.fallbackReason,
+  };
+}
+
+export interface FireworksModelOptions {
+  capabilityRouter?: FireworksCapabilityRouter;
+  capabilityRouting?: boolean;
+}
+
 export class FireworksModel implements ModelPort {
   readonly #client: OpenAI;
   readonly #builderModel: string;
   readonly #studioModel: string;
   readonly #evaluatorModel: string;
   readonly #visionModel: string;
+  readonly #router: FireworksCapabilityRouter | undefined;
   #capabilityProbeExpiresAt = 0;
 
-  constructor(config: AppConfig) {
+  constructor(config: AppConfig, options: FireworksModelOptions = {}) {
     this.#client = new OpenAI({
       apiKey: config.FIREWORKS_API_KEY,
       baseURL: config.FIREWORKS_BASE_URL,
@@ -215,10 +241,27 @@ export class FireworksModel implements ModelPort {
     });
     this.#builderModel =
       config.FIREWORKS_BUILDER_MODEL ?? config.FIREWORKS_MODEL;
-    this.#studioModel = config.FIREWORKS_STUDIO_MODEL;
+    this.#studioModel = config.FIREWORKS_STUDIO_MODEL ?? config.FIREWORKS_MODEL;
     this.#evaluatorModel =
       config.FIREWORKS_EVALUATOR_MODEL ?? config.FIREWORKS_MODEL;
-    this.#visionModel = config.FIREWORKS_VISION_MODEL;
+    this.#visionModel = config.FIREWORKS_VISION_MODEL ?? config.FIREWORKS_MODEL;
+    const capabilityRouting =
+      options.capabilityRouting ?? config.NODE_ENV !== "test";
+    this.#router =
+      options.capabilityRouter ??
+      (capabilityRouting
+        ? new FireworksCapabilityRouter(
+            new FireworksCatalogClient({
+              apiKey: config.FIREWORKS_API_KEY,
+              inferenceBaseUrl: config.FIREWORKS_BASE_URL,
+            }),
+            new FireworksResponsesCapabilityProbe({
+              apiKey: config.FIREWORKS_API_KEY,
+              baseUrl: config.FIREWORKS_BASE_URL,
+            }),
+            new FileFireworksPinStore(".buildlabs/fireworks-model-pins"),
+          )
+        : undefined);
   }
 
   async complete(
@@ -231,8 +274,11 @@ export class FireworksModel implements ModelPort {
     const promptCacheIsolationKey = OpaqueIdentifierSchema.parse(
       context.promptCacheIsolationKey,
     );
+    const role = context.modelRole === "studio" ? "orchestration" : "builder";
+    const pin = await this.#route(role, trajectoryId, signal);
     const model =
-      context.modelRole === "studio" ? this.#studioModel : this.#builderModel;
+      pin?.modelId ??
+      (context.modelRole === "studio" ? this.#studioModel : this.#builderModel);
     const request: FireworksChatCompletionParams = {
       model,
       messages: messages.map(toChatMessage),
@@ -254,6 +300,9 @@ export class FireworksModel implements ModelPort {
         "x-session-affinity": trajectoryId,
       },
     });
+    if (pin !== undefined) {
+      this.#router!.assertResponseModel(pin, completion.model);
+    }
     const choice = completion.choices[0];
     if (!choice) {
       throw new Error("Fireworks returned no completion choices");
@@ -279,6 +328,7 @@ export class FireworksModel implements ModelPort {
       ...(reasoningContent ? { reasoningContent } : {}),
       ...(usage ? { usage } : {}),
       ...(performance ? { performance } : {}),
+      ...(pin === undefined ? {} : { providerPin: pinEvidence(pin) }),
     };
   }
 
@@ -286,10 +336,14 @@ export class FireworksModel implements ModelPort {
     input: ContractEvaluationInput,
     signal?: AbortSignal,
   ): Promise<ContractEvaluationOutput> {
+    const trajectoryId = sha256(
+      canonicalJson({ kind: "contract-evaluation", input }),
+    );
+    const pin = await this.#route("evaluator", trajectoryId, signal);
     const request: ChatCompletionCreateParamsNonStreaming & {
       safe_tokenization: true;
     } = {
-      model: this.#evaluatorModel,
+      model: pin?.modelId ?? this.#evaluatorModel,
       temperature: 0,
       max_tokens: 8_192,
       parallel_tool_calls: false,
@@ -336,6 +390,9 @@ export class FireworksModel implements ModelPort {
     const completion = await this.#client.chat.completions.create(request, {
       signal,
     });
+    if (pin !== undefined) {
+      this.#router!.assertResponseModel(pin, completion.model);
+    }
     const message = completion.choices[0]?.message;
     const call = message?.tool_calls?.find(
       (candidate) =>
@@ -352,7 +409,11 @@ export class FireworksModel implements ModelPort {
     } catch {
       throw new Error("Fireworks returned malformed evaluation JSON");
     }
-    return ContractEvaluationOutputSchema.parse(parsed);
+    const output = ContractEvaluationOutputSchema.parse(parsed);
+    return {
+      ...output,
+      ...(pin === undefined ? {} : { providerPin: pinEvidence(pin) }),
+    };
   }
 
   async inspectRasterClaims(
@@ -360,8 +421,19 @@ export class FireworksModel implements ModelPort {
     signal?: AbortSignal,
   ): Promise<RasterClaimInspectionOutput> {
     validateRasterClaimInput(input);
+    const trajectoryId = sha256(
+      canonicalJson({
+        kind: "raster-claim-inspection",
+        assets: input.assets.map((asset) => ({
+          index: asset.index,
+          sha256: asset.sha256,
+          imageSha256: asset.imageSha256,
+        })),
+      }),
+    );
+    const pin = await this.#route("raster", trajectoryId, signal);
     const request: ChatCompletionCreateParamsNonStreaming = {
-      model: this.#visionModel,
+      model: pin?.modelId ?? this.#visionModel,
       temperature: 0,
       max_tokens: 2_048,
       reasoning_effort: "none",
@@ -430,6 +502,9 @@ export class FireworksModel implements ModelPort {
     const completion = await this.#client.chat.completions.create(request, {
       signal,
     });
+    if (pin !== undefined) {
+      this.#router!.assertResponseModel(pin, completion.model);
+    }
     const calls = completion.choices[0]?.message.tool_calls ?? [];
     if (
       calls.length !== 1 ||
@@ -483,13 +558,32 @@ export class FireworksModel implements ModelPort {
       );
     }
     return {
-      modelDigest: sha256(this.#visionModel),
+      modelDigest: sha256(pin?.modelId ?? this.#visionModel),
+      ...(pin === undefined ? {} : { providerPin: pinEvidence(pin) }),
       results: validated.data.results,
     };
   }
 
   async health(signal?: AbortSignal): Promise<void> {
     if (this.#capabilityProbeExpiresAt > Date.now()) {
+      return;
+    }
+    if (this.#router !== undefined) {
+      for (const role of [
+        "builder",
+        "patch",
+        "orchestration",
+        "raster",
+        "voice",
+        "evaluator",
+      ] as const) {
+        await this.#router.route(
+          role,
+          sha256(`buildlabs-fireworks-health:${role}`),
+          signal,
+        );
+      }
+      this.#capabilityProbeExpiresAt = Date.now() + CAPABILITY_PROBE_TTL_MS;
       return;
     }
     const models = [
@@ -500,6 +594,14 @@ export class FireworksModel implements ModelPort {
     }
     await this.#probeVisionModel(signal);
     this.#capabilityProbeExpiresAt = Date.now() + CAPABILITY_PROBE_TTL_MS;
+  }
+
+  async #route(
+    role: FireworksModelRole,
+    trajectoryId: string,
+    signal?: AbortSignal,
+  ): Promise<FireworksModelPin | undefined> {
+    return this.#router?.route(role, trajectoryId, signal);
   }
 
   async #probeModel(model: string, signal?: AbortSignal): Promise<void> {

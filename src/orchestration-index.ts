@@ -90,9 +90,14 @@ const defaultFactories: OrchestrationRuntimeFactories = {
     // FireworksModel currently accepts the wider build-runtime AppConfig but
     // reads only these three fields. Keep that mismatch isolated here.
     const fireworksConfig = {
+      NODE_ENV: config.NODE_ENV,
       FIREWORKS_API_KEY: config.FIREWORKS_API_KEY,
       FIREWORKS_BASE_URL: config.FIREWORKS_BASE_URL,
       FIREWORKS_MODEL: config.FIREWORKS_MODEL,
+      FIREWORKS_BUILDER_MODEL: config.FIREWORKS_MODEL,
+      FIREWORKS_STUDIO_MODEL: config.FIREWORKS_MODEL,
+      FIREWORKS_EVALUATOR_MODEL: config.FIREWORKS_MODEL,
+      FIREWORKS_VISION_MODEL: config.FIREWORKS_MODEL,
     } as AppConfig;
     return new FireworksModel(fireworksConfig);
   },

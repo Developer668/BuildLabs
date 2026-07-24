@@ -1,5 +1,10 @@
 import type { BuildAssignment } from "../domain/contract.js";
-import type { CommandReceipt } from "../domain/evidence.js";
+import {
+  SandboxAsyncExecutionReceiptSchema,
+  type CommandReceipt,
+  type SandboxAsyncExecutionReceipt,
+} from "../domain/evidence.js";
+import { digestJson, sha256 } from "../lib/canonical-json.js";
 import { boundText } from "../lib/redaction.js";
 import type {
   SandboxSession,
@@ -503,12 +508,20 @@ export async function runCommandVerification(
           : {}),
       },
       async (span) => {
+        const asyncReceiptsBefore = snapshotAsyncExecutionReceipts(
+          request.sandbox,
+        );
         const startedAt = new Date().toISOString();
         try {
           const result = await request.sandbox.runCommand(
             target.command,
             target.timeoutSeconds,
             request.signal,
+          );
+          const asyncExecution = appendedAsyncExecutionReceipt(
+            request.sandbox,
+            asyncReceiptsBefore,
+            target.command,
           );
           const completedAt = new Date().toISOString();
           const output = {
@@ -524,6 +537,7 @@ export async function runCommandVerification(
             stdoutTruncated: result.stdoutTruncated,
             stderrTruncated: result.stderrTruncated,
             durationMs: result.durationMs,
+            ...(asyncExecution ? { asyncExecution } : {}),
           };
           const receipt: CommandReceipt = {
             ...createReceiptBase({
@@ -544,6 +558,7 @@ export async function runCommandVerification(
             stdoutTruncated: output.stdoutTruncated,
             stderrTruncated: output.stderrTruncated,
             durationMs: result.durationMs,
+            ...(asyncExecution ? { asyncExecution } : {}),
             ...(target.requirementId
               ? {
                   requirementId: target.requirementId,
@@ -563,11 +578,28 @@ export async function runCommandVerification(
           });
           return receipt;
         } catch (error) {
+          let commandError = error;
+          let asyncExecution: SandboxAsyncExecutionReceipt | undefined;
+          try {
+            asyncExecution = appendedAsyncExecutionReceipt(
+              request.sandbox,
+              asyncReceiptsBefore,
+              target.command,
+            );
+          } catch (bindingError) {
+            commandError = bindingError;
+          }
           const completedAt = new Date().toISOString();
           const message = boundText(
-            error instanceof Error ? error.message : "Unknown command error",
+            commandError instanceof Error
+              ? commandError.message
+              : "Unknown command error",
             8_192,
           );
+          const output = {
+            error: message,
+            ...(asyncExecution ? { asyncExecution } : {}),
+          };
           const receipt: CommandReceipt = {
             ...createReceiptBase({
               runId: request.runId,
@@ -576,7 +608,7 @@ export async function runCommandVerification(
               startedAt,
               completedAt,
               input: target,
-              output: { error: message },
+              output,
             }),
             kind: target.kind,
             provider: "daytona",
@@ -590,6 +622,7 @@ export async function runCommandVerification(
               0,
               Date.parse(completedAt) - Date.parse(startedAt),
             ),
+            ...(asyncExecution ? { asyncExecution } : {}),
             ...(target.requirementId
               ? {
                   requirementId: target.requirementId,
@@ -612,6 +645,47 @@ export async function runCommandVerification(
   }
 
   return receipts;
+}
+
+function snapshotAsyncExecutionReceipts(
+  sandbox: SandboxSession,
+): SandboxAsyncExecutionReceipt[] | undefined {
+  if (!sandbox.asyncExecutionReceipts) {
+    return undefined;
+  }
+  return SandboxAsyncExecutionReceiptSchema.array().parse(
+    sandbox.asyncExecutionReceipts(),
+  );
+}
+
+function appendedAsyncExecutionReceipt(
+  sandbox: SandboxSession,
+  before: SandboxAsyncExecutionReceipt[] | undefined,
+  command: string,
+): SandboxAsyncExecutionReceipt | undefined {
+  if (!sandbox.asyncExecutionReceipts || before === undefined) {
+    return undefined;
+  }
+  const after = SandboxAsyncExecutionReceiptSchema.array().parse(
+    sandbox.asyncExecutionReceipts(),
+  );
+  if (
+    after.length < before.length ||
+    digestJson(after.slice(0, before.length)) !== digestJson(before)
+  ) {
+    throw new Error("Daytona async execution receipt history changed");
+  }
+  const appended = after.slice(before.length);
+  if (appended.length > 1) {
+    throw new Error(
+      "Daytona command emitted multiple async execution receipts",
+    );
+  }
+  const receipt = appended[0];
+  if (receipt && receipt.commandSha256 !== sha256(command)) {
+    throw new Error("Daytona async execution receipt covered another command");
+  }
+  return receipt;
 }
 
 function commandTargets(

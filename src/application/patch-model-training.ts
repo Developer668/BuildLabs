@@ -88,12 +88,14 @@ export const PATCH_CURATION_POLICY = Object.freeze({
 export const PATCH_CURATION_POLICY_DIGEST = digestJson(PATCH_CURATION_POLICY);
 
 export const PATCH_PROMOTION_POLICY = Object.freeze({
-  version: 1,
+  version: 2,
   minimumHeldoutExamples: 20,
   minimumTerminalScore: 0.8,
   minimumTerminalImprovement: 0.02,
-  minimumHardComponentScore: 0.8,
+  minimumHardComponentScore: 1,
   maximumRegressionsPerScore: 0,
+  requiresPrivacyVeto: true,
+  requiresRepeatedTrialConfidence: true,
   automaticPromotion: false,
 });
 
@@ -705,7 +707,9 @@ export function decidePatchModelPromotion(
   attestationKey: PatchCheckpointAttestationKey,
 ): PatchPromotionDecision {
   const comparison = verifyPatchHeldOutComparison(input, attestationKey);
-  const reasons: string[] = [];
+  const reasons: string[] = [
+    "Aggregate comparison cannot attest privacy vetoes or repeated-trial confidence; the signed Patch Model matrix is required",
+  ];
 
   if (
     comparison.dataset.recordCount <

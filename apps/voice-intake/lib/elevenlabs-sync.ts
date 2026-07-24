@@ -2,7 +2,10 @@ import {
   cleanConversationId,
   cleanProviderText,
   record,
+  requireCompletedElevenLabsConversation,
   toVoiceConversation,
+  type CompletedElevenLabsConversation,
+  type ElevenLabsConversationFence,
   type VoiceConversation,
 } from "./elevenlabs";
 
@@ -14,10 +17,18 @@ type ConversationList = {
 function configuration() {
   const apiKey = process.env.ELEVENLABS_API_KEY?.trim() || "";
   const agentId = process.env.ELEVENLABS_AGENT_ID?.trim() || "";
-  if (!apiKey || !agentId) {
+  const branchId = process.env.ELEVENLABS_BRANCH_ID?.trim() || "";
+  const versionId = process.env.ELEVENLABS_AGENT_VERSION_ID?.trim() || "";
+  if (!apiKey || !agentId || !branchId || !versionId) {
     throw new Error("ElevenLabs voice archive access is not configured.");
   }
-  return { apiKey, agentId };
+  return {
+    apiKey,
+    agentId,
+    branchId,
+    versionId,
+    environment: "testing" as const,
+  };
 }
 
 async function elevenLabs(path: string, apiKey: string) {
@@ -32,15 +43,44 @@ async function elevenLabs(path: string, apiKey: string) {
   return (await response.json()) as Record<string, unknown>;
 }
 
+async function authoritativeConversation(
+  conversationId: string,
+  configured: ReturnType<typeof configuration>,
+) {
+  const data = await elevenLabs(
+    `/v1/convai/conversations/${encodeURIComponent(conversationId)}`,
+    configured.apiKey,
+  );
+  const fence: ElevenLabsConversationFence = configured;
+  const completed = requireCompletedElevenLabsConversation(
+    data,
+    fence,
+    conversationId,
+  );
+  return { completed, data };
+}
+
+export async function getCompletedElevenLabsConversation(
+  unsafeConversationId: string,
+): Promise<CompletedElevenLabsConversation> {
+  const conversationId = cleanConversationId(unsafeConversationId);
+  if (!conversationId) {
+    throw new Error("The ElevenLabs conversation ID is invalid.");
+  }
+  const configured = configuration();
+  return (await authoritativeConversation(conversationId, configured))
+    .completed;
+}
+
 export async function listCompletedElevenLabsConversations(): Promise<ConversationList> {
-  const { apiKey, agentId } = configuration();
+  const configured = configuration();
   const query = new URLSearchParams({
-    agent_id: agentId,
+    agent_id: configured.agentId,
     page_size: "100",
   });
   const list = await elevenLabs(
     `/v1/convai/conversations?${query.toString()}`,
-    apiKey,
+    configured.apiKey,
   );
   const summaries = Array.isArray(list.conversations) ? list.conversations : [];
   const completedIds: string[] = [];
@@ -51,9 +91,9 @@ export async function listCompletedElevenLabsConversations(): Promise<Conversati
     const conversationId = cleanConversationId(summary.conversation_id);
     const status = cleanProviderText(summary.status, 40);
     if (!conversationId) continue;
-    if (status === "done" || status === "failed") {
+    if (status === "done") {
       completedIds.push(conversationId);
-    } else {
+    } else if (status !== "failed") {
       processing += 1;
     }
   }
@@ -64,11 +104,10 @@ export async function listCompletedElevenLabsConversations(): Promise<Conversati
     const results = await Promise.all(
       batch.map(async (conversationId) => {
         try {
-          const data = await elevenLabs(
-            `/v1/convai/conversations/${encodeURIComponent(conversationId)}`,
-            apiKey,
+          const { data } = await authoritativeConversation(
+            conversationId,
+            configured,
           );
-          if (cleanProviderText(data.agent_id, 160) !== agentId) return null;
           return toVoiceConversation(data);
         } catch {
           return null;

@@ -7,12 +7,32 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { SqliteRunStore } from "../src/adapters/sqlite/run-store.js";
 import { buildCodeRabbitPolicy } from "../src/adapters/coderabbit/coderabbit-cli.js";
+import { CODERABBIT_HANDSHAKE_REVIEW_FLAGS } from "../src/adapters/coderabbit/capability.js";
+import {
+  classifyCodeRabbitFinding,
+  CODERABBIT_CONFIG_SCHEMA_DIGEST,
+  CODERABBIT_CONTROLLER_CONFIG_DIGEST,
+  CODERABBIT_CONTROLLER_RULES_DIGEST,
+  CODERABBIT_DOCTOR_DIGEST,
+  CODERABBIT_EVENT_SCHEMA_DIGEST,
+  CODERABBIT_POLICY_PACK_DIGEST,
+  CODERABBIT_POLICY_PACK_VERSION,
+  CODERABBIT_REQUIRED_REVIEW_FLAGS,
+  CODERABBIT_SUPPORTED_EVENT_KINDS,
+  CODERABBIT_TOOL_POLICY,
+  CODERABBIT_TOOL_POLICY_DIGEST,
+} from "../src/adapters/coderabbit/policy-pack.js";
 import { BuildRunExecutor } from "../src/application/build-run-executor.js";
 import { BuildScheduler } from "../src/application/build-scheduler.js";
 import { DEPENDENCY_BOOTSTRAP_COMMAND } from "../src/application/dependency-bootstrap.js";
 import type { ProvenArtifact } from "../src/domain/artifact.js";
+import { contractDigest } from "../src/domain/contract.js";
+import type {
+  CodeRabbitReviewAttestation,
+  ReviewFinding,
+} from "../src/domain/evidence.js";
 import type { FrozenRevision } from "../src/domain/run.js";
-import { sha256 } from "../src/lib/canonical-json.js";
+import { digestJson, sha256 } from "../src/lib/canonical-json.js";
 import {
   RasterClaimInspectionError,
   type AgentMessage,
@@ -409,7 +429,7 @@ describe("BuildRunExecutor", () => {
     ).toMatchObject({
       status: "ERROR",
       complete: false,
-      error: "Rate limit exceeded; CodeRabbit did not emit a completion event",
+      error: "CodeRabbit review failed closed (provider_failure)",
     });
   });
 
@@ -437,7 +457,7 @@ describe("BuildRunExecutor", () => {
     await executor.execute(run.id, lease);
 
     expect(store.getRun(run.id)?.status).toBe("rejected");
-    expect(reviewer.calls).toBe(2);
+    expect(reviewer.calls).toBe(1);
     expect(model.userPrompts).toHaveLength(2);
     expect(model.userPrompts[1]).toContain(
       "dependency-bootstrap command failed",
@@ -473,13 +493,150 @@ describe("BuildRunExecutor", () => {
       status: "rejected",
       errorCode: "proof_gate_rejected",
     });
-    expect(store.getRun(run.id)?.errorMessage).toContain(
-      "CodeRabbit review policy digest does not match the controller policy",
-    );
+    expect(
+      store
+        .listEvidence(run.id)
+        .find((receipt) => receipt.kind === "coderabbit"),
+    ).toMatchObject({
+      status: "ERROR",
+      complete: false,
+      error: "CodeRabbit review failed closed (review_policy_digest)",
+    });
     expect(reviewer.calls).toBe(1);
     expect(model.userPrompts).toHaveLength(1);
     expect(provider.verifiers).toHaveLength(2);
   });
+
+  it("runs an opt-in light WIP advisory after preview without treating it as proof", async () => {
+    const input = assignment("executor-review-advisory");
+    input.limits.maxRepairRounds = 0;
+    const run = store.createRun(input).run;
+    const lease = store.acquireSlot(run.id, 30_000)!;
+    const reviewer = new AdvisoryReviewer();
+    const provider = new FakeSandboxProvider(
+      new FakeSandbox("sandbox-builder", "builder", previewUrl),
+    );
+    const trace = new TestTrace();
+    const executor = makeExecutor(
+      provider,
+      reviewer,
+      trace,
+      new FakeArtifactStore(),
+      new PassingModel(),
+      true,
+    );
+
+    await executor.execute(run.id, lease);
+
+    expect(store.getRun(run.id)?.status).toBe("passed");
+    expect(reviewer.advisoryCalls).toBe(1);
+    expect(reviewer.authoritativeCalls).toBe(1);
+    expect(reviewer.reviewedRoles).toEqual(["builder", "delivery"]);
+    expect(trace.childNames).toContain("coderabbit.review.advisory");
+    expect(
+      store
+        .listEvidence(run.id)
+        .filter((receipt) => receipt.kind === "coderabbit"),
+    ).toHaveLength(1);
+  });
+
+  it.each([
+    {
+      label: "source digest",
+      failureCode: "source_digest",
+      mutate: (attestation: CodeRabbitReviewAttestation) => ({
+        ...attestation,
+        sourceDigest: sha256("wrong source"),
+      }),
+    },
+    {
+      label: "configuration digest",
+      failureCode: "controller_policy_pack",
+      mutate: (attestation: CodeRabbitReviewAttestation) => ({
+        ...attestation,
+        configDigest: sha256("wrong configuration"),
+      }),
+    },
+    {
+      label: "policy digest",
+      failureCode: "review_policy_digest",
+      mutate: (attestation: CodeRabbitReviewAttestation) => ({
+        ...attestation,
+        policyDigest: sha256("wrong policy"),
+      }),
+    },
+    {
+      label: "tool-policy digest",
+      failureCode: "controller_policy_pack",
+      mutate: (attestation: CodeRabbitReviewAttestation) => ({
+        ...attestation,
+        toolPolicyDigest: sha256("wrong tool policy"),
+      }),
+    },
+    {
+      label: "CLI executable digest",
+      failureCode: "cli_executable_digest",
+      mutate: (attestation: CodeRabbitReviewAttestation) => ({
+        ...attestation,
+        cliExecutableDigestAfter: sha256("different CLI executable"),
+      }),
+    },
+    {
+      label: "review digest",
+      failureCode: "review_digest",
+      mutate: (attestation: CodeRabbitReviewAttestation) => ({
+        ...attestation,
+        reviewDigest: sha256("wrong review"),
+      }),
+    },
+    {
+      label: "self-consistent forged reviewed-file scope",
+      failureCode: "review_scope_files",
+      mutate: (attestation: CodeRabbitReviewAttestation) => {
+        const scope = {
+          ...attestation.scope,
+          reviewedFileCount: 1,
+          reviewedFilesDigest: digestJson(["forged.ts"]),
+        };
+        return {
+          ...attestation,
+          scope,
+          scopeDigest: digestJson(scope),
+        };
+      },
+    },
+  ])(
+    "fails closed on a wrong CodeRabbit $label",
+    async ({ failureCode, mutate }) => {
+      const input = assignment(`executor-review-${failureCode}`);
+      input.limits.maxRepairRounds = 0;
+      const run = store.createRun(input).run;
+      const lease = store.acquireSlot(run.id, 30_000)!;
+      const reviewer = new AttestationTamperingReviewer(mutate);
+      const provider = new FakeSandboxProvider(
+        new FakeSandbox("sandbox-builder", "builder", previewUrl),
+      );
+      const executor = makeExecutor(provider, reviewer);
+
+      await executor.execute(run.id, lease);
+
+      expect(store.getRun(run.id)).toMatchObject({
+        status: "rejected",
+        errorCode: "proof_gate_rejected",
+      });
+      expect(
+        store
+          .listEvidence(run.id)
+          .find((receipt) => receipt.kind === "coderabbit"),
+      ).toMatchObject({
+        status: "ERROR",
+        complete: false,
+        error: `CodeRabbit review failed closed (${failureCode})`,
+      });
+      expect(reviewer.calls).toBe(1);
+      expect(store.listOutbox(10)).toHaveLength(0);
+    },
+  );
 
   it.each([
     ["provider error", "provider_error"],
@@ -748,13 +905,13 @@ describe("BuildRunExecutor", () => {
     expect(store.acquireSlot(next.id, 30_000)?.slotId).toBe(1);
   });
 
-  it("repairs actionable noncritical CodeRabbit findings when budget remains", async () => {
+  it("reviews a changed repair digest again and propagates a typed repair brief", async () => {
     const input = assignment("executor-review-repair");
     input.limits.maxRepairRounds = 1;
     const run = store.createRun(input).run;
     const lease = store.acquireSlot(run.id, 30_000)!;
     const reviewer = new RepairingReviewer();
-    const model = new PassingModel();
+    const model = new DigestChangingRepairModel();
     const builder = new FakeSandbox("sandbox-builder", "builder", previewUrl);
     const provider = new FakeSandboxProvider(builder);
     const executor = makeExecutor(
@@ -769,11 +926,111 @@ describe("BuildRunExecutor", () => {
 
     expect(store.getRun(run.id)?.status).toBe("passed");
     expect(reviewer.calls).toBe(2);
+    expect(new Set(reviewer.sourceDigests).size).toBe(2);
+    expect(
+      store
+        .listEvidence(run.id)
+        .filter((receipt) => receipt.kind === "coderabbit"),
+    ).toHaveLength(2);
+    expect(model.userPrompts[1]).toContain(
+      "BEGIN CONTROLLER-NORMALIZED CODERABBIT REPAIR DATA",
+    );
+    expect(model.userPrompts[1]).toContain('"severity":"major"');
+    expect(model.userPrompts[1]).toContain('"category":"accessibility"');
+    expect(model.userPrompts[1]).toContain(
+      '"governingInvariant":"customer-experience-remains-accessible"',
+    );
+    expect(model.userPrompts[1]).toContain('"startLine":12');
+    expect(model.userPrompts[1]).toContain('"endLine":14');
+    expect(model.userPrompts[1]).toContain(
+      `"sourceDigest":"${reviewer.sourceDigests[0]}"`,
+    );
     expect(model.userPrompts[1]).toContain("Add an aria-live error summary.");
     expect(provider.verifiers).toHaveLength(4);
     expect(
       provider.verifiers.filter((sandbox) => sandbox.disposeCalls === 1),
     ).toHaveLength(3);
+  });
+
+  it("reuses one authoritative review when a repair leaves the digest unchanged", async () => {
+    const input = assignment("executor-review-reuse");
+    input.limits.maxRepairRounds = 1;
+    const run = store.createRun(input).run;
+    const lease = store.acquireSlot(run.id, 30_000)!;
+    const reviewer = new RepairingReviewer();
+    const model = new PassingModel();
+    const trace = new TestTrace();
+    const provider = new FakeSandboxProvider(
+      new FakeSandbox("sandbox-builder", "builder", previewUrl),
+    );
+    const executor = makeExecutor(
+      provider,
+      reviewer,
+      trace,
+      new FakeArtifactStore(),
+      model,
+    );
+
+    await executor.execute(run.id, lease);
+
+    expect(store.getRun(run.id)?.status).toBe("passed");
+    expect(reviewer.calls).toBe(1);
+    expect(
+      store
+        .listEvidence(run.id)
+        .filter((receipt) => receipt.kind === "coderabbit"),
+    ).toHaveLength(1);
+    expect(trace.childNames).toContain("coderabbit.review.reuse");
+    expect(model.userPrompts).toHaveLength(2);
+    expect(store.listOutbox(10)).toHaveLength(1);
+  });
+
+  it("does not average away a critical CodeRabbit finding", async () => {
+    const input = assignment("executor-review-critical");
+    input.limits.maxRepairRounds = 0;
+    const run = store.createRun(input).run;
+    const lease = store.acquireSlot(run.id, 30_000)!;
+    const reviewer = new FixedFindingsReviewer([
+      {
+        severity: "critical",
+        fileName: "src/index.ts",
+        message: "A memory corruption defect can crash this request path.",
+      },
+    ]);
+    const provider = new FakeSandboxProvider(
+      new FakeSandbox("sandbox-builder", "builder", previewUrl),
+    );
+    const executor = makeExecutor(provider, reviewer);
+
+    await executor.execute(run.id, lease);
+
+    expect(store.getRun(run.id)).toMatchObject({
+      status: "rejected",
+      errorCode: "proof_gate_rejected",
+    });
+    expect(
+      store
+        .listEvidence(run.id)
+        .find((receipt) => receipt.kind === "coderabbit"),
+    ).toMatchObject({
+      status: "FAIL",
+      complete: true,
+      findings: [expect.objectContaining({ severity: "critical" })],
+    });
+    expect(
+      store
+        .listEvidence(run.id)
+        .find((receipt) => receipt.kind === "contract-evaluation"),
+    ).toMatchObject({
+      status: "PASS",
+      braintrustScores: {
+        hardRequirements: 1,
+        supportedBusinessFacts: 1,
+        evidenceGrounding: 1,
+        preferenceSatisfaction: 1,
+      },
+    });
+    expect(store.listOutbox(10)).toHaveLength(0);
   });
 
   it("keeps poisoned builder state out of every proof surface", async () => {
@@ -901,6 +1158,7 @@ describe("BuildRunExecutor", () => {
     trace: TracePort = new TestTrace(),
     artifactStore: ArtifactStore = new FakeArtifactStore(),
     model: ModelPort = new PassingModel(),
+    enableCodeRabbitAdvisoryWipReview = false,
   ): BuildRunExecutor {
     return new BuildRunExecutor({
       store,
@@ -909,6 +1167,7 @@ describe("BuildRunExecutor", () => {
       model,
       reviewer,
       trace,
+      enableCodeRabbitAdvisoryWipReview,
     });
   }
 });
@@ -932,20 +1191,22 @@ class FakeSandbox implements SandboxSession {
   disposeCalls = 0;
   failDisposal = false;
   readonly proofOperations: string[] = [];
-  readonly sourceBytes: Buffer;
+  sourceBytes: Buffer;
+  revision: FrozenRevision;
   #digestChecks = 0;
 
   constructor(
     readonly id: string,
     readonly role: "builder" | "commands" | "delivery",
     readonly previewUrl: string,
-    readonly revision: FrozenRevision = {
+    revision: FrozenRevision = {
       sourceDigest: "e".repeat(64),
       commitSha: "f".repeat(40),
       frozenAt: "2026-07-23T12:00:00.000Z",
     },
     sourceBytes: Uint8Array = Buffer.from("controller-held-source\n"),
   ) {
+    this.revision = revision;
     this.sourceBytes = Buffer.from(sourceBytes);
   }
 
@@ -1020,7 +1281,16 @@ class FakeSandbox implements SandboxSession {
     return Promise.resolve(path === "Dockerfile" ? "FROM node:24" : "");
   }
 
-  writeFile() {
+  writeFile(path: string, contents: string) {
+    if (this.role === "builder") {
+      this.sourceBytes = Buffer.from(
+        `${this.sourceBytes.toString("utf8")}${path}\0${contents}\n`,
+      );
+      this.revision = {
+        ...this.revision,
+        sourceDigest: this.controllerContentDigest,
+      };
+    }
     return Promise.resolve();
   }
 
@@ -1140,9 +1410,11 @@ class FakeSandbox implements SandboxSession {
     const archivePath = join(root, "workspace.tar");
     const archiveBytes = Buffer.from(this.sourceBytes);
     await mkdir(directory);
+    await mkdir(join(directory, "src"));
     await Promise.all([
       writeFile(join(directory, "Dockerfile"), "FROM node:24\n"),
       writeFile(join(directory, "source-role.txt"), `${this.role}\n`),
+      writeFile(join(directory, "src/index.ts"), "export const ok = true;\n"),
       writeFile(archivePath, archiveBytes),
     ]);
     return {
@@ -1340,6 +1612,45 @@ class PassingModel implements ModelPort {
   }
 }
 
+class DigestChangingRepairModel extends PassingModel {
+  override complete(
+    messages: AgentMessage[],
+    _tools: AgentToolDefinition[],
+  ): Promise<ModelTurn> {
+    this.userPrompts.push(
+      messages.find((message) => message.role === "user")?.content ?? "",
+    );
+    return Promise.resolve({
+      content: null,
+      toolCalls: [
+        ...(this.userPrompts.length > 1
+          ? [
+              {
+                id: "repair",
+                name: "write_file",
+                argumentsJson: JSON.stringify({
+                  path: "src/index.ts",
+                  contents:
+                    'export const accessibleErrorRegion = "aria-live";\n',
+                }),
+              },
+            ]
+          : []),
+        {
+          id: "preview",
+          name: "start_preview",
+          argumentsJson: "{}",
+        },
+        {
+          id: "finish",
+          name: "finish",
+          argumentsJson: JSON.stringify({ summary: "Candidate ready" }),
+        },
+      ],
+    });
+  }
+}
+
 class OperationalRasterModel extends PassingModel {
   constructor(
     private readonly failure: "model_response_invalid" | "provider_error",
@@ -1488,14 +1799,59 @@ class PassingReviewer implements CodeReviewPort {
         )
       ).trim(),
     );
+    return makeAttestedReview(request, { rawSeed: "clean review" });
+  }
+
+  health(): Promise<void> {
+    return Promise.resolve();
+  }
+}
+
+class AdvisoryReviewer implements CodeReviewPort {
+  advisoryCalls = 0;
+  authoritativeCalls = 0;
+  readonly reviewedRoles: string[] = [];
+
+  async review(request: CodeReviewRequest): Promise<CodeReviewResult> {
+    this.authoritativeCalls += 1;
+    this.reviewedRoles.push(
+      (
+        await readFile(
+          join(request.workspaceDirectory, "source-role.txt"),
+          "utf8",
+        )
+      ).trim(),
+    );
+    return makeAttestedReview(request, { rawSeed: "authoritative review" });
+  }
+
+  async reviewAdvisory(request: CodeReviewRequest): Promise<CodeReviewResult> {
+    this.advisoryCalls += 1;
+    this.reviewedRoles.push(
+      (
+        await readFile(
+          join(request.workspaceDirectory, "source-role.txt"),
+          "utf8",
+        )
+      ).trim(),
+    );
+    const result = makeAttestedReview(request, { rawSeed: "advisory review" });
+    const scope = {
+      ...result.attestation.scope,
+      reviewKind: "advisory_light" as const,
+    };
     return {
-      complete: true,
-      findings: [],
-      rawDigest: sha256("clean review"),
-      policyDigest: buildCodeRabbitPolicy(
-        request.contract,
-        request.verificationContext,
-      ).digest,
+      ...result,
+      attestation: {
+        ...result.attestation,
+        reviewKind: "advisory_light",
+        scope,
+        scopeDigest: digestJson(scope),
+        reviewFlagsDigest: digestJson([
+          ...CODERABBIT_REQUIRED_REVIEW_FLAGS,
+          "--light",
+        ]),
+      },
     };
   }
 
@@ -1507,21 +1863,63 @@ class PassingReviewer implements CodeReviewPort {
 class UnboundFindingsReviewer implements CodeReviewPort {
   calls = 0;
 
-  review(): Promise<CodeReviewResult> {
+  review(request: CodeReviewRequest): Promise<CodeReviewResult> {
     this.calls += 1;
     return Promise.resolve({
-      complete: true,
-      findings: [
-        {
-          severity: "major",
-          fileName: "src/index.ts",
-          message: "UNBOUND REVIEW GUIDANCE",
-          codegenInstructions: "UNBOUND REVIEW GUIDANCE",
-        },
-      ],
-      rawDigest: sha256("unbound review"),
+      ...makeAttestedReview(request, {
+        rawSeed: "unbound review",
+        findings: [
+          {
+            severity: "major",
+            fileName: "src/index.ts",
+            message: "UNBOUND REVIEW GUIDANCE",
+            codegenInstructions: "UNBOUND REVIEW GUIDANCE",
+          },
+        ],
+      }),
       policyDigest: sha256("wrong controller policy"),
     });
+  }
+
+  health(): Promise<void> {
+    return Promise.resolve();
+  }
+}
+
+class AttestationTamperingReviewer implements CodeReviewPort {
+  calls = 0;
+
+  constructor(
+    private readonly mutate: (
+      attestation: CodeRabbitReviewAttestation,
+    ) => CodeRabbitReviewAttestation,
+  ) {}
+
+  review(request: CodeReviewRequest): Promise<CodeReviewResult> {
+    this.calls += 1;
+    return Promise.resolve(
+      makeAttestedReview(request, {
+        rawSeed: "tampered review",
+        mutateAttestation: this.mutate,
+      }),
+    );
+  }
+
+  health(): Promise<void> {
+    return Promise.resolve();
+  }
+}
+
+class FixedFindingsReviewer implements CodeReviewPort {
+  constructor(private readonly findings: ReviewFinding[]) {}
+
+  review(request: CodeReviewRequest): Promise<CodeReviewResult> {
+    return Promise.resolve(
+      makeAttestedReview(request, {
+        rawSeed: "fixed findings review",
+        findings: this.findings,
+      }),
+    );
   }
 
   health(): Promise<void> {
@@ -1546,33 +1944,192 @@ class FailingReviewer implements CodeReviewPort {
 
 class RepairingReviewer implements CodeReviewPort {
   calls = 0;
+  readonly sourceDigests: string[] = [];
 
   review(request: CodeReviewRequest): Promise<CodeReviewResult> {
     this.calls += 1;
-    return Promise.resolve({
-      complete: true,
-      findings:
-        this.calls === 1
-          ? [
-              {
-                severity: "major",
-                fileName: "src/index.ts",
-                message: "Form errors are not announced accessibly.",
-                codegenInstructions: "Add an aria-live error summary.",
-              },
-            ]
-          : [],
-      rawDigest: sha256(`repair review ${this.calls}`),
-      policyDigest: buildCodeRabbitPolicy(
-        request.contract,
-        request.verificationContext,
-      ).digest,
-    });
+    this.sourceDigests.push(request.revision.sourceDigest);
+    return Promise.resolve(
+      makeAttestedReview(request, {
+        rawSeed: `repair review ${this.calls}`,
+        findings:
+          this.calls === 1
+            ? [
+                {
+                  severity: "major",
+                  fileName: "src/index.ts",
+                  message: "Form errors are not announced accessibly.",
+                  codegenInstructions: "Add an aria-live error summary.",
+                  startLine: 12,
+                  endLine: 14,
+                },
+              ]
+            : [],
+      }),
+    );
   }
 
   health(): Promise<void> {
     return Promise.resolve();
   }
+}
+
+function makeAttestedReview(
+  request: CodeReviewRequest,
+  options: {
+    rawSeed: string;
+    findings?: ReviewFinding[];
+    mutateAttestation?: (
+      attestation: CodeRabbitReviewAttestation,
+    ) => CodeRabbitReviewAttestation;
+  },
+): CodeReviewResult {
+  const findings = (options.findings ?? []).map((finding) => {
+    const classification = classifyCodeRabbitFinding(finding);
+    return {
+      ...finding,
+      severity: classification.severity,
+      category: classification.category,
+      governingInvariant: classification.governingInvariant,
+      ...(classification.ruleId
+        ? { controllerRuleId: classification.ruleId }
+        : {}),
+    } satisfies ReviewFinding;
+  });
+  const severityCounts: CodeRabbitReviewAttestation["severityCounts"] = {
+    critical: 0,
+    major: 0,
+    minor: 0,
+    trivial: 0,
+    info: 0,
+  };
+  const categoryCounts = new Map<string, number>();
+  for (const finding of findings) {
+    severityCounts[finding.severity] += 1;
+    const category = finding.category ?? "code-quality";
+    categoryCounts.set(category, (categoryCounts.get(category) ?? 0) + 1);
+  }
+  const rawDigest = sha256(
+    `${options.rawSeed}:${request.revision.sourceDigest}`,
+  );
+  const policyDigest = buildCodeRabbitPolicy(
+    request.contract,
+    request.verificationContext,
+  ).digest;
+  const executableDigest = sha256("test-coderabbit-cli");
+  const reviewContext = {
+    reviewType: "committed" as const,
+    currentBranch: "candidate",
+    baseBranch: "main" as const,
+    baseCommit: "a".repeat(40),
+    workingDirectoryDigest: sha256(request.workspaceDirectory),
+  };
+  const scope = {
+    reviewKind: "authoritative_full" as const,
+    ...reviewContext,
+    reviewedFileCount: 3,
+    reviewedFilesDigest: digestJson([
+      "Dockerfile",
+      "source-role.txt",
+      "src/index.ts",
+    ]),
+  };
+  const capability = {
+    state: "healthy" as const,
+    policyPackVersion: CODERABBIT_POLICY_PACK_VERSION,
+    policyPackDigest: CODERABBIT_POLICY_PACK_DIGEST,
+    cliVersion: "0.7.0",
+    cliExecutableDigest: executableDigest,
+    rootHelpDigest: sha256("test-coderabbit-root-help"),
+    reviewHelpDigest: sha256("test-coderabbit-review-help"),
+    reviewFlagsDigest: digestJson(CODERABBIT_HANDSHAKE_REVIEW_FLAGS),
+    agentJsonl: true as const,
+    supportedEventKinds: [...CODERABBIT_SUPPORTED_EVENT_KINDS],
+    reviewFlags: [...CODERABBIT_HANDSHAKE_REVIEW_FLAGS],
+    authenticated: true as const,
+    doctor: {
+      passed: 8,
+      warnings: 1,
+      failed: 0,
+      digest: CODERABBIT_DOCTOR_DIGEST,
+    },
+    updatePolicy: "disabled-and-digest-pinned" as const,
+    serviceConnectivity: "healthy" as const,
+    controllerConfig: "supported" as const,
+    toolSupport: "disabled-controller-policy" as const,
+  };
+  const attestation: CodeRabbitReviewAttestation = {
+    schemaVersion: 1,
+    reviewKind: "authoritative_full",
+    capabilityState: "review-verified",
+    authorityKey: digestJson({
+      schemaVersion: 1,
+      runId: request.runId,
+      sourceDigest: request.revision.sourceDigest,
+    }),
+    sourceDigest: request.revision.sourceDigest,
+    contractDigest: contractDigest(request.contract),
+    reviewDigest: rawDigest,
+    findingSetDigest: digestJson(findings),
+    reviewContext,
+    reviewContextDigest: digestJson(reviewContext),
+    scope,
+    scopeDigest: digestJson(scope),
+    policyPackVersion: CODERABBIT_POLICY_PACK_VERSION,
+    policyPackDigest: CODERABBIT_POLICY_PACK_DIGEST,
+    configSchemaDigest: CODERABBIT_CONFIG_SCHEMA_DIGEST,
+    configDigest: CODERABBIT_CONTROLLER_CONFIG_DIGEST,
+    rulesDigest: CODERABBIT_CONTROLLER_RULES_DIGEST,
+    policyDigest,
+    toolPolicyDigest: CODERABBIT_TOOL_POLICY_DIGEST,
+    eventSchemaDigest: CODERABBIT_EVENT_SCHEMA_DIGEST,
+    capability,
+    capabilityDigest: digestJson(capability),
+    cliVersion: "0.7.0",
+    cliExecutableDigestBefore: executableDigest,
+    cliExecutableDigestAfter: executableDigest,
+    reviewFlagsDigest: digestJson(CODERABBIT_REQUIRED_REVIEW_FLAGS),
+    updatePolicy: "disabled-and-digest-pinned",
+    authentication: "authenticated",
+    doctor: {
+      passed: 8,
+      warnings: 1,
+      failed: 0,
+      digest: CODERABBIT_DOCTOR_DIGEST,
+    },
+    serviceConnectivity: "healthy",
+    agentJsonl: true,
+    terminalState: "review_completed",
+    eventCounts: {
+      reviewContext: 1,
+      status: 1,
+      heartbeat: 0,
+      finding: findings.length,
+      complete: 1,
+      error: 0,
+    },
+    attempts: 1,
+    retryReasons: [],
+    durationMs: 1,
+    severityCounts,
+    categoryCounts: [...categoryCounts.entries()].map(([category, count]) => ({
+      category,
+      count,
+    })),
+    configuredTools: [...CODERABBIT_TOOL_POLICY.configuredTools],
+    observedTools: [],
+    toolCoverage: "disabled-controller-policy",
+  };
+
+  return {
+    complete: true,
+    findings,
+    rawDigest,
+    policyDigest,
+    attestation: options.mutateAttestation
+      ? options.mutateAttestation(attestation)
+      : attestation,
+  };
 }
 
 class FakeArtifactStore implements ArtifactStore {

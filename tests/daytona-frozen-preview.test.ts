@@ -38,10 +38,14 @@ describe("Daytona frozen preview materialization", () => {
         autoStopInterval: 12,
         ttlMinutes: 12,
         labels: {
+          "buildlabs.owner": "buildlabs-controller",
+          "buildlabs.managed": "true",
+          "buildlabs.role": "frozen-preview",
           "buildlabs.purpose": "proven-preview",
           "buildlabs.run-id": request.runId,
           "buildlabs.event-id": request.eventId,
           "buildlabs.artifact-id": request.artifactId,
+          "buildlabs.artifact-sha256": request.artifactSha256.slice(0, 32),
           "buildlabs.revision": request.revisionHash.slice(0, 32),
           "buildlabs.effect-key": sha256(request.idempotencyKey).slice(0, 32),
           "buildlabs.effect-input": frozenPreviewEffectInputDigest(request),
@@ -88,7 +92,52 @@ describe("Daytona frozen preview materialization", () => {
       harness.provider.materializeFrozenPreview(request),
     ).rejects.toThrow("HTTP 503");
     expect(harness.probe).toHaveBeenCalledTimes(3);
-    expect(harness.deleteIsolated).not.toHaveBeenCalled();
+    expect(harness.deleteIsolated).toHaveBeenCalledWith(120, true);
+  });
+
+  it("fails closed when the promoted snapshot identity marker is missing", async () => {
+    const request = frozenPreviewRequest();
+    const harness = frozenPreviewHarness(
+      request,
+      () => new Response(null, { status: 200 }),
+    );
+    harness.removeSnapshotIdentity();
+
+    await expect(
+      harness.provider.materializeFrozenPreview(request),
+    ).rejects.toThrow("snapshot identity is unavailable");
+    expect(harness.probe).not.toHaveBeenCalled();
+    expect(harness.deleteIsolated).toHaveBeenCalledWith(120, true);
+  });
+
+  it("fails closed when the promoted snapshot marker has another revision", async () => {
+    const request = frozenPreviewRequest();
+    const harness = frozenPreviewHarness(
+      request,
+      () => new Response(null, { status: 200 }),
+    );
+    harness.replaceSnapshotRevision("0".repeat(64));
+
+    await expect(
+      harness.provider.materializeFrozenPreview(request),
+    ).rejects.toThrow("does not match the proven snapshot");
+    expect(harness.probe).not.toHaveBeenCalled();
+    expect(harness.deleteIsolated).toHaveBeenCalledWith(120, true);
+  });
+
+  it("fails closed when the promoted image archive does not match its attestation", async () => {
+    const request = frozenPreviewRequest();
+    const harness = frozenPreviewHarness(
+      request,
+      () => new Response(null, { status: 200 }),
+    );
+    harness.rejectSnapshotImage();
+
+    await expect(
+      harness.provider.materializeFrozenPreview(request),
+    ).rejects.toThrow("image archive failed attestation");
+    expect(harness.probe).not.toHaveBeenCalled();
+    expect(harness.deleteIsolated).toHaveBeenCalledWith(120, true);
   });
 
   it("rejects stale revision or artifact markers from an otherwise healthy preview", async () => {
@@ -109,7 +158,7 @@ describe("Daytona frozen preview materialization", () => {
       harness.provider.materializeFrozenPreview(request),
     ).rejects.toThrow("identity markers");
     expect(harness.probe).toHaveBeenCalledTimes(1);
-    expect(harness.deleteIsolated).not.toHaveBeenCalled();
+    expect(harness.deleteIsolated).toHaveBeenCalledWith(120, true);
   });
 
   it("reuses the exact labeled sandbox when the materialization response is retried", async () => {
@@ -145,6 +194,19 @@ describe("Daytona frozen preview materialization", () => {
       ]),
     ).resolves.toHaveLength(2);
     expect(harness.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("deletes a tracked frozen preview during deterministic provider shutdown", async () => {
+    const request = frozenPreviewRequest();
+    const harness = frozenPreviewHarness(
+      request,
+      () => new Response(null, { status: 200 }),
+    );
+
+    await harness.provider.materializeFrozenPreview(request);
+    await harness.provider.close();
+
+    expect(harness.deleteIsolated).toHaveBeenCalledWith(120, true);
   });
 
   it("recovers the deterministic sandbox name when Daytona loses the create response", async () => {
@@ -202,6 +264,24 @@ describe("Daytona frozen preview materialization", () => {
       }),
     ).rejects.toThrow("idempotency key was reused with different input");
     expect(harness.create).toHaveBeenCalledTimes(1);
+    expect(harness.deleteIsolated).not.toHaveBeenCalled();
+  });
+
+  it("rejects a snapshot name that is not bound to the run and revision", async () => {
+    const request = frozenPreviewRequest();
+    const harness = frozenPreviewHarness(
+      request,
+      () => new Response(null, { status: 200 }),
+    );
+
+    await expect(
+      harness.provider.materializeFrozenPreview({
+        ...request,
+        snapshotId: `buildlabs-deadbeef-${request.revisionHash.slice(0, 12)}`,
+      }),
+    ).rejects.toThrow("not bound to its run and revision");
+    expect(harness.list).not.toHaveBeenCalled();
+    expect(harness.create).not.toHaveBeenCalled();
   });
 
   it("aborts a stalled Daytona identity lookup before creating a sandbox", async () => {
@@ -236,9 +316,10 @@ describe("Daytona frozen preview materialization", () => {
 
 function frozenPreviewRequest(): FrozenPreviewMaterializationRequest {
   const revisionHash = sha256(`frozen revision:${randomUUID()}`);
+  const runId = randomUUID();
   return {
-    snapshotId: `buildlabs-12345678-${revisionHash.slice(0, 12)}`,
-    runId: randomUUID(),
+    snapshotId: `buildlabs-${runId.slice(0, 8)}-${revisionHash.slice(0, 12)}`,
+    runId,
     eventId: randomUUID(),
     artifactId: randomUUID(),
     artifactSha256: sha256(`artifact:${randomUUID()}`),
@@ -257,25 +338,53 @@ function frozenPreviewHarness(
     .fn()
     .mockRejectedValue(new Error("Original sandbox is stopped and mutated"));
   const deleteIsolated = vi.fn().mockResolvedValue(undefined);
+  let snapshotIdentityPresent = true;
+  let snapshotIdentityRevision = request.revisionHash;
+  let snapshotImageValid = true;
   const executeCommand = vi.fn(
     (
-      _command: string,
+      command: string,
       _workDir?: string,
       _environment?: Record<string, string>,
       _timeoutSeconds?: number,
-    ) =>
-      Promise.resolve({
+    ) => {
+      if (command.includes("proven-snapshot-identity.json")) {
+        return Promise.resolve({
+          exitCode: snapshotIdentityPresent ? 0 : 1,
+          result: snapshotIdentityPresent
+            ? JSON.stringify({
+                schema: "buildlabs.daytona.proven-snapshot-identity.v1",
+                snapshotName: request.snapshotId,
+                revisionHash: snapshotIdentityRevision,
+                imageId: `sha256:${"1".repeat(64)}`,
+                imageArchiveSha256: "2".repeat(64),
+              })
+            : "",
+        });
+      }
+      if (command.includes("docker load --input")) {
+        return Promise.resolve({
+          exitCode: snapshotImageValid ? 0 : 1,
+          result: "",
+        });
+      }
+      return Promise.resolve({
         exitCode: 0,
         result: "BUILDLABS_COMMAND_RESULT_V1\n0\n0\n0\n0\n0\n\n\n",
-      }),
+      });
+    },
   );
   const startIsolated = vi.fn().mockResolvedValue(undefined);
   const setTtl = vi.fn().mockResolvedValue(undefined);
   const sandboxLabels = {
+    "buildlabs.owner": "buildlabs-controller",
+    "buildlabs.managed": "true",
+    "buildlabs.role": "frozen-preview",
     "buildlabs.purpose": "proven-preview",
     "buildlabs.run-id": request.runId,
     "buildlabs.event-id": request.eventId,
     "buildlabs.artifact-id": request.artifactId,
+    "buildlabs.artifact-sha256": request.artifactSha256.slice(0, 32),
     "buildlabs.revision": request.revisionHash.slice(0, 32),
     "buildlabs.effect-key": sha256(request.idempotencyKey).slice(0, 32),
     "buildlabs.effect-input": frozenPreviewEffectInputDigest(request),
@@ -288,8 +397,13 @@ function frozenPreviewHarness(
   const isolatedSandbox = {
     id: "isolated-preview-sandbox",
     snapshot: request.snapshotId,
+    user: "daytona",
+    cpu: 2,
+    memory: 4,
+    disk: 10,
     public: false,
     state: "started",
+    networkBlockAll: true,
     labels: sandboxLabels,
     refreshData: vi.fn().mockResolvedValue(undefined),
     start: startIsolated,
@@ -338,6 +452,9 @@ function frozenPreviewHarness(
       get: vi.fn().mockResolvedValue({
         name: request.snapshotId,
         state: "active",
+        cpu: 2,
+        mem: 4,
+        disk: 10,
       }),
     },
   } as unknown as DaytonaClientPort;
@@ -360,6 +477,15 @@ function frozenPreviewHarness(
     },
     originalPreview,
     probe,
+    removeSnapshotIdentity: () => {
+      snapshotIdentityPresent = false;
+    },
+    replaceSnapshotRevision: (revisionHash: string) => {
+      snapshotIdentityRevision = revisionHash;
+    },
+    rejectSnapshotImage: () => {
+      snapshotImageValid = false;
+    },
     setTtl,
     startIsolated,
     updateNetworkSettings,

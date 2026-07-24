@@ -3,7 +3,7 @@ import "./globals.css";
 export const metadata = {
   title: "BuildLabs Voice Intake",
   description:
-    "Local operator review for completed BuildLabs ElevenLabs intake sessions.",
+    "Governed browser voice intake and operator review for BuildLabs ElevenAgents sessions.",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",

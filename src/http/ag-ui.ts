@@ -49,6 +49,18 @@ const BuildRunForwardedPropsSchema = z
     afterSequence: z.number().int().nonnegative().default(0),
   })
   .strip();
+const AgUiResumePointSchema = z
+  .object({
+    buildRunId: z.uuid(),
+    cursor: z.number().int().nonnegative(),
+  })
+  .strip();
+const DurableRunEventResumePointSchema = z
+  .object({
+    runId: z.uuid(),
+    sequence: z.number().int().nonnegative(),
+  })
+  .strip();
 
 export class AgUiInputError extends Error {
   constructor(message: string) {
@@ -362,6 +374,7 @@ export function createBuildRunAgUiHandler(
     let input: BuildLabsAgUiRunInput;
     try {
       input = parseBuildLabsAgUiRunInput(request.body);
+      input = applyLastEventId(input, request.headers["last-event-id"]);
     } catch (error) {
       if (error instanceof AgUiInputError) {
         return reply.code(400).send({
@@ -391,7 +404,7 @@ export function createBuildRunAgUiHandler(
       options.activeStreams &&
       options.activeStreams.size >= AG_UI_MAX_ACTIVE_STREAMS
     ) {
-      return reply.code(429).send({
+      return reply.code(429).header("Retry-After", "1").send({
         error: "ag_ui_capacity_exceeded",
         message: "The maximum number of active AG-UI streams is in use",
       });
@@ -418,11 +431,22 @@ export function createBuildRunAgUiHandler(
     const body = Readable.from(encodeEvents(events, encoder), {
       objectMode: false,
     });
-    body.once("close", () => {
+    let cleanedUp = false;
+    const cleanup = () => {
+      if (cleanedUp) {
+        return;
+      }
+      cleanedUp = true;
       options.activeStreams?.delete(abortController);
       request.raw.off("aborted", abort);
       reply.raw.off("close", abort);
-    });
+      body.off("end", cleanup);
+      body.off("error", cleanup);
+      body.off("close", cleanup);
+    };
+    body.once("end", cleanup);
+    body.once("error", cleanup);
+    body.once("close", cleanup);
 
     return reply
       .type(encoder.getContentType())
@@ -482,6 +506,50 @@ function assertIdentifier(value: string, property: string): void {
       `${property} must contain 1-${MAX_IDENTIFIER_LENGTH} non-padded characters`,
     );
   }
+}
+
+function applyLastEventId(
+  input: BuildLabsAgUiRunInput,
+  header: string | string[] | undefined,
+): BuildLabsAgUiRunInput {
+  if (header === undefined || header === "") {
+    return input;
+  }
+  if (
+    Array.isArray(header) ||
+    header.length > 192 ||
+    header.trim() !== header
+  ) {
+    throw new AgUiInputError(
+      "Last-Event-ID must be a single run-bound durable cursor",
+    );
+  }
+  const separator = header.lastIndexOf(":");
+  if (separator <= 0 || separator === header.length - 1) {
+    throw new AgUiInputError(
+      "Last-Event-ID must be a single run-bound durable cursor",
+    );
+  }
+  const parsed = AgUiResumePointSchema.safeParse({
+    buildRunId: header.slice(0, separator),
+    cursor: Number(header.slice(separator + 1)),
+  });
+  if (
+    !parsed.success ||
+    !/^(?:0|[1-9]\d*)$/u.test(header.slice(separator + 1)) ||
+    parsed.data.buildRunId !== input.forwardedProps.buildRunId
+  ) {
+    throw new AgUiInputError(
+      "Last-Event-ID does not match the requested build run",
+    );
+  }
+  return {
+    ...input,
+    forwardedProps: {
+      ...input.forwardedProps,
+      afterSequence: parsed.data.cursor,
+    },
+  };
 }
 
 function boundedPollInterval(value: number | undefined): number {
@@ -774,9 +842,50 @@ async function* encodeEvents(
   events: AsyncIterable<AGUIEvent>,
   encoder: EventEncoder,
 ): AsyncGenerator<Buffer> {
+  const encodesSse = encoder.getContentType() === "text/event-stream";
   for await (const event of events) {
+    if (encodesSse) {
+      const eventId = agUiSseEventId(event);
+      const prefix = eventId === undefined ? "" : `id: ${eventId}\n`;
+      yield Buffer.from(`${prefix}${encoder.encode(event)}`);
+      continue;
+    }
     yield Buffer.from(encoder.encodeBinary(event));
   }
+}
+
+function agUiSseEventId(event: AGUIEvent): string | undefined {
+  let resumePoint: z.infer<typeof AgUiResumePointSchema> | undefined;
+  if (event.type === EventType.CUSTOM && event.name === BUILD_RUN_EVENT_NAME) {
+    const parsed = DurableRunEventResumePointSchema.safeParse(event.value);
+    if (parsed.success) {
+      resumePoint = {
+        buildRunId: parsed.data.runId,
+        cursor: parsed.data.sequence,
+      };
+    }
+  } else if (
+    event.type === EventType.CUSTOM &&
+    event.name === BUILD_RUN_KEEPALIVE_NAME
+  ) {
+    const parsed = AgUiResumePointSchema.safeParse(event.value);
+    if (parsed.success) {
+      resumePoint = parsed.data;
+    }
+  } else if (event.type === EventType.STATE_SNAPSHOT) {
+    const parsed = AgUiResumePointSchema.safeParse(event.snapshot);
+    if (parsed.success) {
+      resumePoint = parsed.data;
+    }
+  } else if (event.type === EventType.RUN_FINISHED) {
+    const parsed = AgUiResumePointSchema.safeParse(event.result);
+    if (parsed.success) {
+      resumePoint = parsed.data;
+    }
+  }
+  return resumePoint === undefined
+    ? undefined
+    : `${resumePoint.buildRunId}:${resumePoint.cursor}`;
 }
 
 function normalizedAcceptHeader(

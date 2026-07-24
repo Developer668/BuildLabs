@@ -16,6 +16,41 @@ const ReceiptBaseSchema = z.object({
   outputDigest: Sha256Schema,
 });
 
+export const SandboxAsyncExecutionReceiptSchema = z
+  .object({
+    schema: z.literal("buildlabs.daytona.async-execution.v1"),
+    commandSha256: Sha256Schema,
+    sessionRef: Sha256Schema,
+    commandRef: Sha256Schema,
+    startedAt: z.iso.datetime(),
+    completedAt: z.iso.datetime(),
+    durationMs: z.number().int().nonnegative(),
+    outcome: z.enum(["completed", "failed", "timed_out", "cancelled"]),
+    exitCode: z.number().int().nullable(),
+    stdoutSha256: Sha256Schema,
+    stderrSha256: Sha256Schema,
+    stdoutBytes: z.number().int().nonnegative(),
+    stderrBytes: z.number().int().nonnegative(),
+    outputTruncated: z.boolean(),
+    sandboxTerminated: z.boolean(),
+    failureCode: z
+      .enum([
+        "aborted",
+        "authentication",
+        "attestation",
+        "conflict",
+        "not_found",
+        "otel_export",
+        "provider",
+        "quota",
+        "rate_limited",
+        "timeout",
+        "unknown",
+      ])
+      .optional(),
+  })
+  .strict();
+
 export const CommandReceiptSchema = ReceiptBaseSchema.extend({
   kind: z.enum([
     "artifact",
@@ -41,6 +76,7 @@ export const CommandReceiptSchema = ReceiptBaseSchema.extend({
   stdoutTruncated: z.boolean().default(false),
   stderrTruncated: z.boolean().default(false),
   durationMs: z.number().int().nonnegative(),
+  asyncExecution: SandboxAsyncExecutionReceiptSchema.optional(),
 });
 
 export const PreviewCheckSchema = z.object({
@@ -96,7 +132,193 @@ export const ReviewFindingSchema = z.object({
   message: z.string().min(1).max(32_000),
   codegenInstructions: z.string().min(1).max(32_000).optional(),
   suggestions: z.array(z.string().min(1).max(8_000)).max(20).optional(),
+  startLine: z.number().int().positive().max(10_000_000).optional(),
+  endLine: z.number().int().positive().max(10_000_000).optional(),
+  category: z
+    .enum([
+      "access-control",
+      "accessibility",
+      "business-claims",
+      "code-quality",
+      "cross-project-isolation",
+      "dependency-policy",
+      "docker-delivery",
+      "payment-gate",
+      "privacy",
+      "production-credentials",
+      "proof-gate",
+      "raw-preview-exposure",
+      "unsafe-webhook",
+      "unrestricted-logs",
+    ])
+    .optional(),
+  governingInvariant: z.string().min(1).max(256).optional(),
+  controllerRuleId: z.string().min(1).max(64).optional(),
 });
+
+const CodeRabbitDoctorEvidenceSchema = z
+  .object({
+    passed: z.number().int().nonnegative().max(100),
+    warnings: z.number().int().nonnegative().max(100),
+    failed: z.number().int().nonnegative().max(100),
+    digest: Sha256Schema,
+  })
+  .strict();
+
+export const CodeRabbitReviewContextEvidenceSchema = z
+  .object({
+    reviewType: z.literal("committed"),
+    currentBranch: z.string().min(1).max(512),
+    baseBranch: z.literal("main"),
+    baseCommit: z.string().regex(/^[a-f0-9]{40,64}$/),
+    workingDirectoryDigest: Sha256Schema,
+  })
+  .strict();
+
+export const CodeRabbitReviewScopeEvidenceSchema = z
+  .object({
+    reviewKind: z.enum(["authoritative_full", "advisory_light"]),
+    reviewType: z.literal("committed"),
+    currentBranch: z.string().min(1).max(512),
+    baseBranch: z.literal("main"),
+    baseCommit: z.string().regex(/^[a-f0-9]{40,64}$/),
+    workingDirectoryDigest: Sha256Schema,
+    reviewedFileCount: z.number().int().nonnegative().max(10_000),
+    reviewedFilesDigest: Sha256Schema,
+  })
+  .strict();
+
+export const CodeRabbitCapabilityEvidenceSchema = z
+  .object({
+    state: z.literal("healthy"),
+    policyPackVersion: z.string().min(1).max(128),
+    policyPackDigest: Sha256Schema,
+    cliVersion: z.string().regex(/^\d+\.\d+\.\d+$/),
+    cliExecutableDigest: Sha256Schema,
+    rootHelpDigest: Sha256Schema,
+    reviewHelpDigest: Sha256Schema,
+    reviewFlagsDigest: Sha256Schema,
+    agentJsonl: z.literal(true),
+    supportedEventKinds: z
+      .array(
+        z.enum([
+          "review_context",
+          "status",
+          "heartbeat",
+          "finding",
+          "complete",
+          "error",
+        ]),
+      )
+      .length(6),
+    reviewFlags: z.array(z.string().min(1).max(64)).max(32),
+    authenticated: z.literal(true),
+    doctor: CodeRabbitDoctorEvidenceSchema,
+    updatePolicy: z.literal("disabled-and-digest-pinned"),
+    serviceConnectivity: z.literal("healthy"),
+    controllerConfig: z.literal("supported"),
+    toolSupport: z.literal("disabled-controller-policy"),
+  })
+  .strict();
+
+export const CodeRabbitReviewAttestationSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    reviewKind: z.enum(["authoritative_full", "advisory_light"]),
+    capabilityState: z.enum(["review-verified", "proof-integrated"]),
+    authorityKey: Sha256Schema,
+    sourceDigest: Sha256Schema,
+    contractDigest: Sha256Schema,
+    reviewDigest: Sha256Schema,
+    findingSetDigest: Sha256Schema,
+    reviewContext: CodeRabbitReviewContextEvidenceSchema,
+    reviewContextDigest: Sha256Schema,
+    scope: CodeRabbitReviewScopeEvidenceSchema,
+    scopeDigest: Sha256Schema,
+    policyPackVersion: z.string().min(1).max(128),
+    policyPackDigest: Sha256Schema,
+    configSchemaDigest: Sha256Schema,
+    configDigest: Sha256Schema,
+    rulesDigest: Sha256Schema,
+    policyDigest: Sha256Schema,
+    toolPolicyDigest: Sha256Schema,
+    eventSchemaDigest: Sha256Schema,
+    capability: CodeRabbitCapabilityEvidenceSchema,
+    capabilityDigest: Sha256Schema,
+    cliVersion: z.string().regex(/^\d+\.\d+\.\d+$/),
+    cliExecutableDigestBefore: Sha256Schema,
+    cliExecutableDigestAfter: Sha256Schema,
+    reviewFlagsDigest: Sha256Schema,
+    updatePolicy: z.literal("disabled-and-digest-pinned"),
+    authentication: z.literal("authenticated"),
+    doctor: CodeRabbitDoctorEvidenceSchema,
+    serviceConnectivity: z.literal("healthy"),
+    agentJsonl: z.literal(true),
+    terminalState: z.literal("review_completed"),
+    eventCounts: z
+      .object({
+        reviewContext: z.number().int().nonnegative().max(10_000),
+        status: z.number().int().nonnegative().max(10_000),
+        heartbeat: z.number().int().nonnegative().max(10_000),
+        finding: z.number().int().nonnegative().max(500),
+        complete: z.number().int().nonnegative().max(10),
+        error: z.number().int().nonnegative().max(10_000),
+      })
+      .strict(),
+    attempts: z.number().int().min(1).max(3),
+    retryReasons: z
+      .array(z.enum(["structured_rate_limit", "missing_terminal_completion"]))
+      .max(2),
+    durationMs: z.number().int().nonnegative(),
+    severityCounts: z
+      .object({
+        critical: z.number().int().nonnegative().max(500),
+        major: z.number().int().nonnegative().max(500),
+        minor: z.number().int().nonnegative().max(500),
+        trivial: z.number().int().nonnegative().max(500),
+        info: z.number().int().nonnegative().max(500),
+      })
+      .strict(),
+    categoryCounts: z
+      .array(
+        z
+          .object({
+            category: z.string().min(1).max(64),
+            count: z.number().int().positive().max(500),
+          })
+          .strict(),
+      )
+      .max(32),
+    configuredTools: z.array(z.string().min(1).max(64)).max(64),
+    observedTools: z.array(z.string().min(1).max(64)).max(64),
+    toolCoverage: z.enum(["disabled-controller-policy", "protocol-observed"]),
+  })
+  .strict();
+
+export const CodeRabbitRepairBriefSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    findingDigest: Sha256Schema,
+    fileName: ReviewFilePathSchema,
+    range: z
+      .object({
+        startLine: z.number().int().positive().max(10_000_000),
+        endLine: z.number().int().positive().max(10_000_000),
+      })
+      .strict()
+      .nullable(),
+    severity: z.enum(["critical", "major", "minor", "trivial", "info"]),
+    category: z.string().min(1).max(64),
+    governingInvariant: z.string().min(1).max(256),
+    controllerRuleId: z.string().min(1).max(64).optional(),
+    controllerPolicyVersion: z.string().min(1).max(128),
+    controllerPolicyDigest: Sha256Schema,
+    reviewDigest: Sha256Schema,
+    sourceDigest: Sha256Schema,
+    untrustedSummary: z.string().min(1).max(4_000),
+    untrustedRemediation: z.string().min(1).max(4_000).optional(),
+  })
+  .strict();
 
 export const ReviewReceiptSchema = ReceiptBaseSchema.extend({
   kind: z.literal("coderabbit"),
@@ -105,6 +327,8 @@ export const ReviewReceiptSchema = ReceiptBaseSchema.extend({
   findings: z.array(ReviewFindingSchema).max(500),
   policyDigest: Sha256Schema.optional(),
   expectedPolicyDigest: Sha256Schema.optional(),
+  attestation: CodeRabbitReviewAttestationSchema.optional(),
+  expectedAttestationDigest: Sha256Schema.optional(),
   error: z.string().min(1).max(8_192).optional(),
 });
 
@@ -344,12 +568,19 @@ export const EvidenceReceiptSchema = z.discriminatedUnion("kind", [
 ]);
 
 export type CommandReceipt = z.infer<typeof CommandReceiptSchema>;
+export type SandboxAsyncExecutionReceipt = z.infer<
+  typeof SandboxAsyncExecutionReceiptSchema
+>;
 export type PreviewReceipt = z.infer<typeof PreviewReceiptSchema>;
 export type ReviewReceipt = z.infer<typeof ReviewReceiptSchema>;
 export type EvaluationReceipt = z.infer<typeof EvaluationReceiptSchema>;
 export type RasterClaimReceipt = z.infer<typeof RasterClaimReceiptSchema>;
 export type EvidenceReceipt = z.infer<typeof EvidenceReceiptSchema>;
 export type ReviewFinding = z.infer<typeof ReviewFindingSchema>;
+export type CodeRabbitReviewAttestation = z.infer<
+  typeof CodeRabbitReviewAttestationSchema
+>;
+export type CodeRabbitRepairBrief = z.infer<typeof CodeRabbitRepairBriefSchema>;
 
 export interface ProofDecision {
   passed: boolean;

@@ -545,7 +545,8 @@ function parseSse(body: string): AGUIEvent[] {
     .split("\n\n")
     .filter(Boolean)
     .map((record) => {
-      expect(record.startsWith("data: ")).toBe(true);
-      return EventSchemas.parse(JSON.parse(record.slice("data: ".length)));
+      const data = record.split("\n").find((line) => line.startsWith("data: "));
+      expect(data).toBeDefined();
+      return EventSchemas.parse(JSON.parse(data!.slice("data: ".length)));
     });
 }

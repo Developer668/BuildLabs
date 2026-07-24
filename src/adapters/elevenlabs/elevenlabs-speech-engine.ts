@@ -93,6 +93,10 @@ export class ElevenLabsSpeechEngine {
     const conversationIds = new WeakMap<SpeechEngineSession, string>();
     const pendingResponses = new Set<Promise<void>>();
     const turnControllers = new Set<AbortController>();
+    const sessionTurnControllers = new Map<
+      SpeechEngineSession,
+      AbortController
+    >();
     let closing = false;
 
     const reportError = (message: string): void => {
@@ -102,8 +106,31 @@ export class ElevenLabsSpeechEngine {
         // Error reporting must never destabilize the Speech Engine callback.
       }
     };
-    const closeSession = (session: SpeechEngineSession): void => {
+    const abortSessionTurn = (
+      session: SpeechEngineSession,
+      reason: string,
+    ): void => {
+      const controller = sessionTurnControllers.get(session);
+      if (!controller) {
+        return;
+      }
+      sessionTurnControllers.delete(session);
+      if (!controller.signal.aborted) {
+        controller.abort(new Error(reason));
+      }
+    };
+    const forgetSession = (
+      session: SpeechEngineSession,
+      reason: string,
+    ): void => {
+      abortSessionTurn(session, reason);
       sessions.delete(session);
+    };
+    const closeSession = (
+      session: SpeechEngineSession,
+      reason = "ElevenLabs Speech Engine session closed",
+    ): void => {
+      forgetSession(session, reason);
       try {
         session.close();
       } catch {
@@ -137,7 +164,7 @@ export class ElevenLabsSpeechEngine {
       _error: unknown,
       session: SpeechEngineSession,
     ): void => {
-      closeSession(session);
+      closeSession(session, "ElevenLabs Speech Engine session failed");
       reportError("ElevenLabs Speech Engine session failed");
     };
     const respondToTranscript = async (
@@ -148,8 +175,10 @@ export class ElevenLabsSpeechEngine {
       if (!trackSession(session)) {
         return;
       }
+      abortSessionTurn(session, "ElevenLabs Speech Engine turn was superseded");
       const turnController = new AbortController();
       turnControllers.add(turnController);
+      sessionTurnControllers.set(session, turnController);
       const turnSignal = AbortSignal.any([signal, turnController.signal]);
 
       try {
@@ -176,6 +205,9 @@ export class ElevenLabsSpeechEngine {
         await session.sendResponse(response);
       } finally {
         turnControllers.delete(turnController);
+        if (sessionTurnControllers.get(session) === turnController) {
+          sessionTurnControllers.delete(session);
+        }
       }
     };
 
@@ -185,6 +217,10 @@ export class ElevenLabsSpeechEngine {
       ELEVENLABS_SPEECH_ENGINE_PATH,
       {
         onInit: (conversationId, session) => {
+          abortSessionTurn(
+            session,
+            "ElevenLabs Speech Engine session was reinitialized",
+          );
           if (conversationId.length > 0 && conversationId.length <= 256) {
             conversationIds.set(session, conversationId);
           }
@@ -204,10 +240,13 @@ export class ElevenLabsSpeechEngine {
           });
         },
         onClose: (session) => {
-          closeSession(session);
+          closeSession(session, "ElevenLabs Speech Engine session closed");
         },
         onDisconnect: (session) => {
-          sessions.delete(session);
+          forgetSession(
+            session,
+            "ElevenLabs Speech Engine session disconnected",
+          );
         },
         onError: (error, session) => {
           handleSessionError(error, session);

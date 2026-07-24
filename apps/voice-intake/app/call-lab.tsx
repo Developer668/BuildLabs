@@ -3,6 +3,8 @@
 import { AudioLines, ChevronDown, RefreshCw, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { BrowserVoicePanel } from "./browser-voice-panel";
+
 type TranscriptTurn = {
   role: "agent" | "user";
   message: string;
@@ -27,6 +29,7 @@ type CallRecord = {
 
 type PublicConfig = {
   agentConfigured: boolean;
+  browserConfigured: boolean;
   accessConfigured: boolean;
   accessRequired: boolean;
 };
@@ -59,9 +62,11 @@ function callTitle(call: CallRecord) {
 export function CallLab() {
   const [config, setConfig] = useState<PublicConfig>({
     agentConfigured: false,
+    browserConfigured: false,
     accessConfigured: false,
     accessRequired: true,
   });
+  const [configLoaded, setConfigLoaded] = useState(false);
   const [accessCode, setAccessCode] = useState("");
   const [calls, setCalls] = useState<CallRecord[]>([]);
   const [loading, setLoading] = useState(false);
@@ -133,6 +138,7 @@ export function CallLab() {
       .then(async (response) => (await response.json()) as PublicConfig)
       .then((nextConfig) => {
         setConfig(nextConfig);
+        setConfigLoaded(true);
         if (!nextConfig.agentConfigured) {
           setMessage("ElevenLabs voice archive access is not configured.");
         } else if (!nextConfig.accessConfigured) {
@@ -143,7 +149,7 @@ export function CallLab() {
           void loadCalls(false, "", true);
         }
       })
-      .catch(() => undefined);
+      .catch(() => setConfigLoaded(true));
   }, [loadCalls]);
 
   return (
@@ -151,10 +157,10 @@ export function CallLab() {
       <header className="pageHeader">
         <div>
           <p className="eyebrow">BUILDLABS VOICE</p>
-          <h1>Intake archive</h1>
+          <h1>Voice intake</h1>
           <p className="description">
-            Completed ElevenLabs intake sessions, loaded directly from the
-            provider for local operator review.
+            Talk through the software you need, then review provider-complete
+            sessions in the operator archive.
           </p>
         </div>
         <button
@@ -172,6 +178,10 @@ export function CallLab() {
           <span>{loading ? "Refreshing" : "Refresh"}</span>
         </button>
       </header>
+
+      <BrowserVoicePanel
+        configured={configLoaded ? config.browserConfigured : null}
+      />
 
       <section className="connectionPanel">
         <div className="connectionIcon">

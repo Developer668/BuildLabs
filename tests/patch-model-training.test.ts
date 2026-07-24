@@ -19,6 +19,7 @@ import {
 import { sha256 } from "../src/lib/canonical-json.js";
 import { attestPatchHeldOutComparison } from "../src/lib/patch-checkpoint-attestation.js";
 import { assignment, passingEvidence } from "./fixtures.js";
+import { integrateCodeRabbitReviewFixture } from "./patch-model-coderabbit-fixture.js";
 
 const KEY = "patch-model-anonymization-key!".repeat(2);
 const BASE_REVISION = "b".repeat(64);
@@ -55,6 +56,12 @@ function source(): PatchTrainingSource {
   });
   const runId = randomUUID();
   const afterReceipts = passingEvidence(runId, REVISION, input);
+  integrateCodeRabbitReviewFixture(
+    afterReceipts,
+    input.contract,
+    runId,
+    REVISION,
+  );
   const evaluationReceipt = afterReceipts.find(
     (receipt) => receipt.kind === "contract-evaluation",
   );
@@ -336,14 +343,18 @@ describe("Patch Model curation and promotion", () => {
     expect(second.split).toBe(first.split);
   });
 
-  it("marks a measured, regression-free comparison as manual-only eligible", () => {
+  it("keeps legacy aggregate comparisons blocked pending the signed matrix", () => {
     const decision = decidePatchModelPromotion(heldOutComparison(), KEY);
 
     expect(decision).toMatchObject({
-      status: "eligible-for-manual-promotion",
+      status: "blocked",
       automaticPromotion: false,
       promoted: false,
-      reasons: [],
+      reasons: expect.arrayContaining([
+        expect.stringContaining(
+          "cannot attest privacy vetoes or repeated-trial confidence",
+        ),
+      ]),
     });
   });
 
@@ -377,7 +388,9 @@ describe("Patch Model curation and promotion", () => {
     expect(decidePatchModelPromotion(comparison, KEY)).toMatchObject({
       status: "blocked",
       promoted: false,
-      reasons: [expect.stringContaining("terminal has 1")],
+      reasons: expect.arrayContaining([
+        expect.stringContaining("terminal has 1"),
+      ]),
     });
   });
 
@@ -390,7 +403,7 @@ describe("Patch Model curation and promotion", () => {
       status: "blocked",
       automaticPromotion: false,
       promoted: false,
-      reasons: [expect.stringContaining("20 required")],
+      reasons: expect.arrayContaining([expect.stringContaining("20 required")]),
     });
   });
 

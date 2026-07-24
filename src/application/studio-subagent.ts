@@ -480,21 +480,55 @@ class NoopStudioTraceSpan implements TraceSpan {
 export function transcriptExplicitlyRequestsCancellation(
   transcript: StudioTranscriptMessage[],
 ): boolean {
-  const latestUserMessage = transcript.findLast(
-    (message) => message.role === "user",
-  )?.content;
+  const latestUserMessage = transcript
+    .findLast((message) => message.role === "user")
+    ?.content.trim();
   if (!latestUserMessage) {
     return false;
   }
+
+  const directRequest =
+    /^(?:(?:please|kindly)\s+|(?:(?:can|could|would|will)\s+you\s+)|(?:i\s+(?:want|need|would\s+like)\s+you\s+to\s+))?(?:cancel|abort|stop)\s+(?:(?:the\s+)?(?:candidate|build(?:\s+run)?|run|job)\b(?:\s+(?:with\s+id\s+)?[0-9a-f]{8}-[0-9a-f-]{27,})?|(?:it|this|that)\b|[0-9a-f]{8}-[0-9a-f-]{27,})/iu;
+  if (!directRequest.test(latestUserMessage)) {
+    return false;
+  }
+
+  const politeQuestion =
+    /^(?:can|could|would|will)\s+you\s+(?:cancel|abort|stop)\b/iu;
   if (
-    /\b(?:do not|don't|never|not)\s+(?:cancel|abort|stop)\b/iu.test(
+    latestUserMessage.includes("?") &&
+    !politeQuestion.test(latestUserMessage)
+  ) {
+    return false;
+  }
+
+  if (
+    /\b(?:do\s+not|don't|don’t|never|not(?:\s+to)?|shouldn't|shouldn’t|mustn't|mustn’t|can't|can’t|cannot|won't|won’t|wouldn't|wouldn’t)\b.{0,48}\b(?:cancel|abort|stop)\b/iu.test(
+      latestUserMessage,
+    ) ||
+    /\b(?:do\s+not|don't|don’t|never)\s+(?:actually\s+)?(?:act|execute|follow|perform|do|carry\s+(?:it|that)\s+out)\b/iu.test(
+      latestUserMessage,
+    ) ||
+    /\b(?:not\s+(?:requesting|asking|authorizing)|only\s+(?:asking|quoting|testing)|just\s+(?:asking|quoting|testing)|(?:ignore|disregard)\s+(?:it|that|this|the\s+(?:instruction|message|text|prompt)))\b/iu.test(
       latestUserMessage,
     )
   ) {
     return false;
   }
-  return /(?:^|\b(?:please|kindly|can you|could you|would you|I want you to)\s+)(?:cancel|abort|stop)\s+(?:(?:the\s+)?(?:candidate|build(?:\s+run)?|run|job)\b|(?:it|this|that)\b|[0-9a-f]{8}-[0-9a-f-]{27,})/iu.test(
-    latestUserMessage.trim(),
+
+  return !(
+    /["“”`]/u.test(latestUserMessage) ||
+    /\b(?:quote|quoted|quoting|hypothetical|prompt\s+injection)\b/iu.test(
+      latestUserMessage,
+    ) ||
+    /\b(?:as|for)\s+(?:an?\s+)?example\b/iu.test(latestUserMessage) ||
+    /\b(?:page|prompt|message|text|transcript|attacker|instruction)\s+(?:says?|said|contains?|asks?|instructs?)\b/iu.test(
+      latestUserMessage,
+    ) ||
+    /\b(?:malicious|untrusted|embedded)\s+(?:instruction|prompt|text)\b/iu.test(
+      latestUserMessage,
+    ) ||
+    /\b(?:asking|wondering)\s+(?:what|whether|if)\b/iu.test(latestUserMessage)
   );
 }
 

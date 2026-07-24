@@ -5,6 +5,7 @@ import type {
 } from "../domain/contract.js";
 import type { OutboxEvent, ProvenArtifact } from "../domain/artifact.js";
 import type {
+  CodeRabbitReviewAttestation,
   EvaluationReceipt,
   EvidenceReceipt,
   ReviewFinding,
@@ -62,6 +63,8 @@ export interface RenderedPageInspection {
 export interface FrozenPreviewMaterializationRequest {
   snapshotId: string;
   runId: string;
+  projectId?: string;
+  candidateId?: string;
   eventId: string;
   artifactId: string;
   artifactSha256: string;
@@ -69,6 +72,25 @@ export interface FrozenPreviewMaterializationRequest {
   port: number;
   expiresInSeconds: number;
   idempotencyKey: string;
+}
+
+export interface SandboxAsyncExecutionReceipt {
+  schema: "buildlabs.daytona.async-execution.v1";
+  commandSha256: string;
+  sessionRef: string;
+  commandRef: string;
+  startedAt: string;
+  completedAt: string;
+  durationMs: number;
+  outcome: "completed" | "failed" | "timed_out" | "cancelled";
+  exitCode: number | null;
+  stdoutSha256: string;
+  stderrSha256: string;
+  stdoutBytes: number;
+  stderrBytes: number;
+  outputTruncated: boolean;
+  sandboxTerminated: boolean;
+  failureCode?: string;
 }
 
 export interface SandboxSession {
@@ -79,6 +101,7 @@ export interface SandboxSession {
     timeoutSeconds: number,
     signal?: AbortSignal,
   ): Promise<CommandResult>;
+  asyncExecutionReceipts?(): SandboxAsyncExecutionReceipt[];
   readFile(path: string): Promise<string>;
   writeFile(path: string, contents: string): Promise<void>;
   listFiles(path: string, depth: number): Promise<SandboxFile[]>;
@@ -185,6 +208,16 @@ export interface ModelRequestContext {
   modelRole?: "builder" | "studio";
 }
 
+export interface ProviderModelPinEvidence {
+  role:
+    "builder" | "patch" | "orchestration" | "raster" | "voice" | "evaluator";
+  modelResource: string;
+  serviceTier: "priority" | "standard";
+  capabilitySnapshotDigest: string;
+  routerPolicyDigest: string;
+  fallbackReason: string;
+}
+
 export interface ModelTurn {
   content: string | null;
   toolCalls: AgentToolCall[];
@@ -199,6 +232,7 @@ export interface ModelTurn {
     serverTimeToFirstTokenMs?: number;
     serverProcessingTimeMs?: number;
   };
+  providerPin?: ProviderModelPinEvidence;
 }
 
 export interface ModelPort {
@@ -250,6 +284,43 @@ export interface CodeReviewResult {
   findings: ReviewFinding[];
   rawDigest: string;
   policyDigest: string;
+  attestation: CodeRabbitReviewAttestation;
+}
+
+export type CodeReviewCapabilityState =
+  | "uninstalled"
+  | "incompatible"
+  | "unauthenticated"
+  | "unhealthy"
+  | "healthy"
+  | "review-verified"
+  | "proof-integrated";
+
+export interface CodeReviewCapabilityReport {
+  state: CodeReviewCapabilityState;
+  reasonCode?: string;
+  policyPackVersion: string;
+  policyPackDigest: string;
+  cliVersion?: string;
+  cliExecutableDigest?: string;
+  rootHelpDigest?: string;
+  reviewHelpDigest?: string;
+  reviewFlagsDigest?: string;
+  agentJsonl: boolean;
+  supportedEventKinds: string[];
+  reviewFlags: string[];
+  authenticated: boolean;
+  doctor?: {
+    passed: number;
+    warnings: number;
+    failed: number;
+    digest: string;
+  };
+  updatePolicy: "unverified" | "disabled-and-digest-pinned";
+  serviceConnectivity: "unverified" | "healthy" | "unhealthy";
+  controllerConfig: "unverified" | "supported";
+  toolSupport: "unverified" | "disabled-controller-policy";
+  digest?: string;
 }
 
 export interface CodeReviewPort {
@@ -257,6 +328,11 @@ export interface CodeReviewPort {
     request: CodeReviewRequest,
     signal?: AbortSignal,
   ): Promise<CodeReviewResult>;
+  reviewAdvisory?(
+    request: CodeReviewRequest,
+    signal?: AbortSignal,
+  ): Promise<CodeReviewResult>;
+  capabilities?(signal?: AbortSignal): Promise<CodeReviewCapabilityReport>;
   health(signal?: AbortSignal): Promise<void>;
 }
 
@@ -286,6 +362,7 @@ export interface ContractEvaluationOutput {
   requirements: EvaluationReceipt["requirements"];
   unsupportedClaims: EvaluationReceipt["unsupportedClaims"];
   summary: string;
+  providerPin?: ProviderModelPinEvidence;
 }
 
 export type RasterAssetMimeType =
@@ -312,6 +389,7 @@ export interface RasterClaimInspectionInput {
 
 export interface RasterClaimInspectionOutput {
   modelDigest: string;
+  providerPin?: ProviderModelPinEvidence;
   results: Array<{
     assetIndex: number;
     status: "CLEAR" | "MATCH" | "UNSUPPORTED" | "UNVERIFIED";

@@ -4,6 +4,7 @@ import tseslint from "typescript-eslint";
 export default tseslint.config(
   {
     ignores: [
+      "apps/dashboard/**",
       "apps/voice-intake/**",
       "coverage/**",
       "dist/**",

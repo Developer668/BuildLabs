@@ -1,11 +1,9 @@
 import {
-  cleanProviderText,
-  cleanTranscript,
-  conversationReceivedAt,
-  intakeEvaluationSucceeded,
+  cleanConversationId,
   record,
   verifyElevenLabsWebhook,
 } from "../../../../lib/elevenlabs";
+import { getCompletedElevenLabsConversation } from "../../../../lib/elevenlabs-sync";
 import { forwardVoiceIntake } from "../../../../lib/orchestration";
 
 export const dynamic = "force-dynamic";
@@ -75,22 +73,21 @@ export async function POST(request: Request) {
   }
 
   const data = record(event.data);
-  const configuredAgent = process.env.ELEVENLABS_AGENT_ID?.trim() || "";
-  if (
-    !configuredAgent ||
-    cleanProviderText(data.agent_id, 160) !== configuredAgent
-  ) {
-    return new Response("Unknown agent", { status: 403 });
-  }
-  if (!intakeEvaluationSucceeded(data)) {
-    return Response.json({ received: true, ignored: true });
+  const conversationId = cleanConversationId(data.conversation_id);
+  if (!conversationId) {
+    return Response.json(
+      { error: "The completed voice intake is not available." },
+      { status: 503 },
+    );
   }
 
   try {
+    const completed = await getCompletedElevenLabsConversation(conversationId);
     await forwardVoiceIntake({
-      conversationId: cleanProviderText(data.conversation_id, 160),
-      receivedAt: conversationReceivedAt(data),
-      transcript: cleanTranscript(data.transcript),
+      conversationId: completed.conversationId,
+      receivedAt: completed.receivedAt,
+      transcript: completed.transcript,
+      researchConsent: completed.researchConsent,
     });
   } catch {
     return Response.json(

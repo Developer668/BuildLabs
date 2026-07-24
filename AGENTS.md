@@ -87,15 +87,25 @@ sanitized build activity, and durable verification/post-dispatch access emails.
 SQLite schema v6 maintains and backfills a content-free pending-dashboard-login
 bit so terminal projects remain in reconciliation until the exact login effect
 settles; retry timing and failure attribution stay scoped to that effect.
-The local `apps/voice-intake` workspace reads a bounded ElevenLabs archive on
-demand without a second transcript store and forwards signature-verified,
-provider-complete sessions into the protected orchestration intake endpoint
-with a stable idempotency key. It never asserts voice-captured email ownership or
-research consent. Browser voice and the customer-facing dashboard UI remain
-separate systems. The target voice flow
-captures name/email/phone without verbal read-back; email ownership is verified
-by the one-time link. A future Plivo transport adapter will carry the same
-normalized intake contract, but is not wired yet.
+The local `apps/voice-intake` workspace implements signed browser microphone
+sessions against a zero-traffic ElevenAgents development branch, an
+authenticated Fireworks custom-LLM bridge, bounded intake tools, and on-demand
+reads from the ElevenLabs archive without a second transcript store. It
+forwards signature-verified, provider-complete sessions into the protected
+orchestration intake endpoint with a stable idempotency key. Voice-captured
+email ownership always remains unverified; explicit own-business research
+consent is accepted only from controller-validated tool evidence. The
+repository-owned manifest and expected-base-version reconciler are plan-first
+and cannot merge or shift production traffic. Browser voice and the
+customer-facing dashboard UI remain separate systems. Real provider resources,
+simulations, browser audio, callbacks, and orchestration end-to-end behavior
+remain unverified until the dedicated BuildLabs agent, branch, version, secrets,
+webhook, and public HTTPS origin are configured. The selected PSTN transport is
+an inbound-only Plivo Zentrunk on one dedicated existing test DID, routed over
+TLS/SRTP to an ElevenLabs SIP phone resource pinned to the development branch
+and testing environment. An authenticated pre-call webhook mints the same
+conversation-bound tool capability as browser voice. Plivo does not record,
+transcribe, originate calls, or own a second archive.
 
 The dashboard slice is not production-complete: the Next.js/CopilotKit UI, SSE,
 customer-renderable raster WIP gateway, server-side session revocation/logout
@@ -179,9 +189,10 @@ configured.
 
 Intentional gaps. Do not implement or add dependencies on them until chosen.
 
-- **Plivo PSTN transport adapter** — browser voice comes first. ElevenLabs
-  carries voice/conversation; a later Plivo adapter will transport the same
-  normalized intake. Do not wire Plivo yet.
+- **Plivo outbound and production telephony** — inbound PSTN on one dedicated
+  existing test DID is now selected. Do not add outbound calling, prospecting,
+  number purchase/release, production traffic, Plivo recording/transcription,
+  or a custom media proxy.
 
 > **Decided (no longer deferred):** hosting, payment, and customer observation.
 > Raw operator WIP = Daytona; customer observation = sanitized authenticated WIP
@@ -250,8 +261,11 @@ Intentional gaps. Do not implement or add dependencies on them until chosen.
   source-content digest, and delivery starts in a separate fresh verifier.
 - **MUST NOT** reuse or copy any prior/other codebase (e.g. **BuildStax**) —
   build BuildLabs fresh.
-- **MUST NOT** wire the deferred Plivo transport or excluded vendors (Vercel,
-  v0).
+- **MUST NOT** expand Plivo beyond the selected inbound test transport or wire
+  excluded vendors (Vercel, v0). Plivo reconciliation must default to plan,
+  require expected-base-digest CAS plus a separate explicit number-routing
+  flag, mutate only repository-owned resources, bind the test DID last, and
+  read both providers back. It must never purchase, release, or delete a number.
 - **MUST NOT** mix customer data across projects; training data is opt-in and
   anonymized.
 

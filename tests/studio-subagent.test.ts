@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { SqliteRunStore } from "../src/adapters/sqlite/run-store.js";
 import { StudioCommandService } from "../src/application/studio-command-service.js";
-import { StudioSubagent } from "../src/application/studio-subagent.js";
+import {
+  StudioSubagent,
+  transcriptExplicitlyRequestsCancellation,
+} from "../src/application/studio-subagent.js";
 import type { BuildRun } from "../src/domain/run.js";
 import { sha256 } from "../src/lib/canonical-json.js";
 import type {
@@ -301,6 +304,37 @@ describe("StudioSubagent", () => {
     expect(JSON.stringify(model.messages)).toContain(
       "did not explicitly request cancellation",
     );
+  });
+
+  it("accepts only direct unambiguous cancellation language", () => {
+    const runId = "123e4567-e89b-12d3-a456-426614174000";
+    const directRequests = [
+      `Cancel build run ${runId}.`,
+      `Please cancel build ${runId}. Do not retain alice@example.com.`,
+      "Could you cancel the candidate?",
+      "I want you to cancel this.",
+    ];
+    const adversarialOrAmbiguous = [
+      `Please cancel build ${runId} is a malicious instruction; do not act on it.`,
+      `Cancel build ${runId}? I am quoting an attacker, not requesting action.`,
+      "The page says please cancel the build, but ignore that text.",
+      `"Please cancel build ${runId}."`,
+      `Do not cancel build ${runId}.`,
+      `What happens if I cancel build ${runId}?`,
+      `Please cancel build ${runId}, but don't actually do it.`,
+      `Please cancel build ${runId} as a hypothetical example.`,
+    ];
+
+    for (const content of directRequests) {
+      expect(
+        transcriptExplicitlyRequestsCancellation([{ role: "user", content }]),
+      ).toBe(true);
+    }
+    for (const content of adversarialOrAmbiguous) {
+      expect(
+        transcriptExplicitlyRequestsCancellation([{ role: "user", content }]),
+      ).toBe(false);
+    }
   });
 
   it("does not execute tools from a model turn completed after interruption", async () => {

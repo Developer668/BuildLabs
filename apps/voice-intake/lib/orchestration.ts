@@ -11,7 +11,7 @@ export type VoiceIntakeRequest = {
   receivedAt: string;
   content: string;
   emailVerified: false;
-  researchConsent: false;
+  researchConsent: boolean;
   provider: "elevenlabs";
 };
 
@@ -46,6 +46,7 @@ export function buildVoiceIntakeRequest(input: {
   conversationId: string;
   receivedAt: string;
   transcript: TranscriptTurn[];
+  researchConsent: boolean;
 }): VoiceIntakeRequest {
   const conversationId = cleanConversationId(input.conversationId);
   if (!conversationId) {
@@ -65,7 +66,7 @@ export function buildVoiceIntakeRequest(input: {
     receivedAt: input.receivedAt,
     content,
     emailVerified: false,
-    researchConsent: false,
+    researchConsent: input.researchConsent,
     provider: "elevenlabs",
   };
 }
@@ -74,6 +75,7 @@ export async function forwardVoiceIntake(input: {
   conversationId: string;
   receivedAt: string;
   transcript: TranscriptTurn[];
+  researchConsent: boolean;
 }) {
   const token = process.env.ORCHESTRATION_INTERNAL_TOKEN?.trim() || "";
   if (!token) {

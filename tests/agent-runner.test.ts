@@ -369,6 +369,93 @@ describe("AgentRunner", () => {
     expect(JSON.stringify(trace.logs)).not.toContain(privateReasoning);
   });
 
+  it("keeps CodeRabbit repair prose and provider tool identifiers out of trace evidence", async () => {
+    const findingProse = "UNTRUSTED_CODERABBIT_FINDING_PROSE";
+    const remediationProse = "UNTRUSTED_CODERABBIT_REMEDIATION_PROSE";
+    const providerToolId = "PROVIDER_CONTROLLED_TOOL_ID";
+    const providerToolName = "PROVIDER_CONTROLLED_TOOL_NAME";
+    const providerArguments = "PROVIDER_CONTROLLED_TOOL_ARGUMENTS";
+    const model = new SequenceModel([
+      {
+        content: "PROVIDER_CONTROLLED_MODEL_CONTENT",
+        toolCalls: [
+          {
+            id: providerToolId,
+            name: providerToolName,
+            argumentsJson: providerArguments,
+          },
+        ],
+      },
+      {
+        content: null,
+        toolCalls: [
+          {
+            id: "preview-provider-id",
+            name: "start_preview",
+            argumentsJson: "{}",
+          },
+          {
+            id: "finish-provider-id",
+            name: "finish",
+            argumentsJson: JSON.stringify({ summary: "Repair complete" }),
+          },
+        ],
+      },
+    ]);
+    const trace = new TestSpan();
+
+    const result = await new AgentRunner(model).run({
+      assignment: assignment("coderabbit-trace-sanitization"),
+      sandbox: new MemorySandbox(),
+      trace,
+      reviewRepairBriefs: [
+        {
+          schemaVersion: 1,
+          findingDigest: "1".repeat(64),
+          fileName: "src/index.ts",
+          range: { startLine: 1, endLine: 2 },
+          severity: "critical",
+          category: "security",
+          governingInvariant: "controller-owned proof policy",
+          controllerRuleId: "BL-CR-TEST",
+          controllerPolicyVersion: "test-policy-v1",
+          controllerPolicyDigest: "2".repeat(64),
+          reviewDigest: "3".repeat(64),
+          sourceDigest: "4".repeat(64),
+          untrustedSummary: findingProse,
+          untrustedRemediation: remediationProse,
+        },
+      ],
+    });
+
+    expect(result.summary).toBe("Repair complete");
+    expect(JSON.stringify(model.seen)).toContain(findingProse);
+    expect(JSON.stringify(model.seen)).toContain(remediationProse);
+
+    const traceEvidence = JSON.stringify({
+      names: trace.names,
+      inputs: trace.inputs,
+      logs: trace.logs,
+    });
+    for (const value of [
+      findingProse,
+      remediationProse,
+      providerToolId,
+      providerToolName,
+      providerArguments,
+      "preview-provider-id",
+      "finish-provider-id",
+      "PROVIDER_CONTROLLED_MODEL_CONTENT",
+    ]) {
+      expect(traceEvidence).not.toContain(value);
+    }
+    expect(trace.names).toContain("tool.unknown");
+    expect(traceEvidence).toContain(`"name":"unknown"`);
+    expect(traceEvidence).toContain(`"toolName":"start_preview"`);
+    expect(traceEvidence).toContain(`"toolCallIdDigest"`);
+    expect(traceEvidence).not.toContain(`"toolCallId":`);
+  });
+
   it("does not execute a model tool turn completed after cancellation", async () => {
     const controller = new AbortController();
     const model = new SequenceModel(
@@ -523,6 +610,7 @@ class MemorySandbox implements SandboxSession {
 
 class TestSpan implements TraceSpan {
   readonly traceId = "trace-test";
+  readonly names: string[] = [];
   readonly inputs: unknown[] = [];
   readonly logs: unknown[] = [];
 
@@ -531,11 +619,12 @@ class TestSpan implements TraceSpan {
   }
 
   child<T>(
-    _name: string,
+    name: string,
     _type: "function" | "llm" | "review" | "score" | "task" | "tool",
     input: unknown,
     operation: (span: TraceSpan) => Promise<T>,
   ): Promise<T> {
+    this.names.push(name);
     this.inputs.push(structuredClone(input));
     return operation(this);
   }

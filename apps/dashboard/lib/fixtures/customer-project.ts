@@ -1,0 +1,337 @@
+import {
+  type CustomerEvent,
+  type CustomerProjectSnapshot,
+  parseCustomerEvent,
+  parseCustomerProjectSnapshot,
+} from "../contracts/customer";
+
+export const CUSTOMER_FIXTURE_PROJECT_ID = "prj_abcdefghijklmnopqrstuv";
+
+export const customerProjectFixture: CustomerProjectSnapshot =
+  parseCustomerProjectSnapshot({
+    schemaVersion: 1,
+    projectId: CUSTOMER_FIXTURE_PROJECT_ID,
+    aggregateRevision: 27,
+    eventCursor: 48,
+    title: "Northstar appointment workspace",
+    lifecycle: {
+      canonical: "building",
+      label: "Building your project",
+      changedAt: "2026-07-24T16:19:00.000Z",
+    },
+    requestedVersion: 3,
+    paidCommercialVersion: 3,
+    currentProvenVersion: 2,
+    currentProductionVersion: 2,
+    milestoneStates: [
+      {
+        id: "scope",
+        state: "complete",
+        receiptAt: "2026-07-24T15:00:00.000Z",
+      },
+      {
+        id: "payment",
+        state: "complete",
+        receiptAt: "2026-07-24T15:08:00.000Z",
+      },
+      { id: "build", state: "active", receiptAt: null },
+      { id: "proof", state: "not_started", receiptAt: null },
+      {
+        id: "preview",
+        state: "complete",
+        receiptAt: "2026-07-23T22:30:00.000Z",
+      },
+      {
+        id: "production",
+        state: "complete",
+        receiptAt: "2026-07-23T23:10:00.000Z",
+      },
+    ],
+    activeBatch: {
+      batchId: "bat_wxyzabcdefghijklmnopqr",
+      contractVersion: 3,
+      state: "building",
+      requestedBuilderCount: 4,
+      builders: [
+        {
+          builderId: "bld_aaaaaaaaaaaaaaaaaaaaaa",
+          displayName: "Builder 1",
+          allocation: "allocated",
+          status: "running",
+          stage: "generating",
+          progress: {
+            completedToolCalls: 18,
+            failedToolCalls: 0,
+            repairRound: 0,
+            proofReceiptCount: 0,
+          },
+          workspace: {
+            state: "live_unverified",
+            customerRenderable: true,
+            latestFrameId: "frm_aaaaaaaaaaaaaaaaaaaaaa",
+            capturedAt: "2026-07-24T16:18:42.000Z",
+          },
+          currentActivity: {
+            activityId: "activity_builder_1_48",
+            builderId: "bld_aaaaaaaaaaaaaaaaaaaaaa",
+            step: 18,
+            repairRound: 0,
+            action: "file_writing",
+            outcome: "succeeded",
+            fileCount: 3,
+            safeRelativePaths: [
+              "app/appointments/page.tsx",
+              "components/booking-form.tsx",
+              "styles/forms.css",
+            ],
+            diffStats: { files: 3, additions: 142, deletions: 19 },
+            commandLabel: null,
+            occurredAt: "2026-07-24T16:18:38.000Z",
+          },
+          updatedAt: "2026-07-24T16:18:42.000Z",
+          completedAt: null,
+        },
+        {
+          builderId: "bld_bbbbbbbbbbbbbbbbbbbbbb",
+          displayName: "Builder 2",
+          allocation: "allocated",
+          status: "running",
+          stage: "verifying",
+          progress: {
+            completedToolCalls: 26,
+            failedToolCalls: 1,
+            repairRound: 1,
+            proofReceiptCount: 4,
+          },
+          workspace: {
+            state: "starting",
+            customerRenderable: false,
+            latestFrameId: null,
+            capturedAt: null,
+          },
+          currentActivity: {
+            activityId: "activity_builder_2_47",
+            builderId: "bld_bbbbbbbbbbbbbbbbbbbbbb",
+            step: 26,
+            repairRound: 1,
+            action: "command_verification",
+            outcome: "started",
+            fileCount: null,
+            safeRelativePaths: [],
+            diffStats: null,
+            commandLabel: "Controller requirement command",
+            occurredAt: "2026-07-24T16:18:20.000Z",
+          },
+          updatedAt: "2026-07-24T16:18:20.000Z",
+          completedAt: null,
+        },
+        {
+          builderId: "bld_cccccccccccccccccccccc",
+          displayName: "Builder 3",
+          allocation: "allocated",
+          status: "running",
+          stage: "reviewing",
+          progress: {
+            completedToolCalls: 21,
+            failedToolCalls: 0,
+            repairRound: 0,
+            proofReceiptCount: 7,
+          },
+          workspace: {
+            state: "unavailable",
+            customerRenderable: false,
+            latestFrameId: null,
+            capturedAt: null,
+          },
+          currentActivity: {
+            activityId: "activity_builder_3_46",
+            builderId: "bld_cccccccccccccccccccccc",
+            step: 21,
+            repairRound: 0,
+            action: "code_review",
+            outcome: "started",
+            fileCount: null,
+            safeRelativePaths: [],
+            diffStats: null,
+            commandLabel: null,
+            occurredAt: "2026-07-24T16:17:59.000Z",
+          },
+          updatedAt: "2026-07-24T16:17:59.000Z",
+          completedAt: null,
+        },
+        {
+          builderId: "bld_dddddddddddddddddddddd",
+          displayName: "Builder 4",
+          allocation: "allocated",
+          status: "rejected",
+          stage: "complete",
+          progress: {
+            completedToolCalls: 23,
+            failedToolCalls: 0,
+            repairRound: 2,
+            proofReceiptCount: 9,
+          },
+          workspace: {
+            state: "blocked",
+            customerRenderable: false,
+            latestFrameId: null,
+            capturedAt: null,
+          },
+          currentActivity: {
+            activityId: "activity_builder_4_45",
+            builderId: "bld_dddddddddddddddddddddd",
+            step: 23,
+            repairRound: 2,
+            action: "contract_evaluation",
+            outcome: "failed",
+            fileCount: null,
+            safeRelativePaths: [],
+            diffStats: null,
+            commandLabel: null,
+            occurredAt: "2026-07-24T16:16:31.000Z",
+          },
+          updatedAt: "2026-07-24T16:16:31.000Z",
+          completedAt: "2026-07-24T16:16:31.000Z",
+        },
+      ],
+      startedAt: "2026-07-24T15:11:00.000Z",
+      completedAt: null,
+    },
+    contract: {
+      version: 3,
+      title: "Northstar appointment workspace",
+      summary:
+        "A responsive appointment request workflow with clear service selection and accessible form feedback.",
+      deliverables: [
+        {
+          id: "deliverable-booking",
+          text: "Responsive appointment request workflow",
+        },
+        {
+          id: "deliverable-confirmation",
+          text: "Durable confirmation state for submitted requests",
+        },
+      ],
+      requirements: [
+        {
+          id: "requirement-mobile",
+          text: "The appointment form is the first primary action on mobile",
+          priority: "hard",
+        },
+        {
+          id: "requirement-keyboard",
+          text: "Every form control is usable with a keyboard",
+          priority: "hard",
+        },
+        {
+          id: "requirement-calm",
+          text: "The visual treatment should feel calm and clinical",
+          priority: "preference",
+        },
+      ],
+      unknowns: ["Final scheduling system integration is not in this version"],
+    },
+    proof: {
+      contractVersion: 3,
+      receiptCount: 20,
+      state: "in_progress",
+    },
+    preview: {
+      state: "ready",
+      contractVersion: 2,
+      artifactDigest:
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      revisionHash:
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      url: "https://preview.example.invalid/northstar-v2",
+      expiresAt: "2026-08-01T00:00:00.000Z",
+      verifiedAt: "2026-07-23T22:30:00.000Z",
+      frozen: true,
+    },
+    production: {
+      state: "ready",
+      contractVersion: 2,
+      artifactDigest:
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      imageDigest:
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      releaseVersion: 2,
+      url: "https://northstar.example.invalid/",
+      verifiedAt: "2026-07-23T23:10:00.000Z",
+    },
+    pendingAction: "watch",
+    createdAt: "2026-07-22T18:40:00.000Z",
+    updatedAt: "2026-07-24T16:19:00.000Z",
+  });
+
+export const customerEventFixtures: CustomerEvent[] = [
+  parseCustomerEvent({
+    schemaVersion: 1,
+    eventId: "evt_aaaaaaaaaaaaaaaaaaaaaa",
+    sequence: 49,
+    aggregateRevision: 28,
+    projectId: CUSTOMER_FIXTURE_PROJECT_ID,
+    contractVersion: 3,
+    type: "builder.state_changed",
+    occurredAt: "2026-07-24T16:19:08.000Z",
+    data: {
+      status: "building",
+      builderId: "bld_aaaaaaaaaaaaaaaaaaaaaa",
+      actor: "system",
+    },
+  }),
+  parseCustomerEvent({
+    schemaVersion: 1,
+    eventId: "evt_bbbbbbbbbbbbbbbbbbbbbb",
+    sequence: 50,
+    aggregateRevision: 28,
+    projectId: CUSTOMER_FIXTURE_PROJECT_ID,
+    contractVersion: 3,
+    type: "builder.state_changed",
+    occurredAt: "2026-07-24T16:19:09.000Z",
+    data: {
+      status: "building",
+      builderId: "bld_bbbbbbbbbbbbbbbbbbbbbb",
+      actor: "system",
+    },
+  }),
+  parseCustomerEvent({
+    schemaVersion: 1,
+    eventId: "evt_cccccccccccccccccccccc",
+    sequence: 51,
+    aggregateRevision: 28,
+    projectId: CUSTOMER_FIXTURE_PROJECT_ID,
+    contractVersion: 3,
+    type: "builder.state_changed",
+    occurredAt: "2026-07-24T16:19:10.000Z",
+    data: {
+      status: "building",
+      builderId: "bld_cccccccccccccccccccccc",
+      actor: "system",
+    },
+  }),
+  parseCustomerEvent({
+    schemaVersion: 1,
+    eventId: "evt_dddddddddddddddddddddd",
+    sequence: 52,
+    aggregateRevision: 28,
+    projectId: CUSTOMER_FIXTURE_PROJECT_ID,
+    contractVersion: 3,
+    type: "candidate.outcome_recorded",
+    occurredAt: "2026-07-24T16:19:11.000Z",
+    data: {
+      status: "verifying",
+      builderId: "bld_dddddddddddddddddddddd",
+      actor: "system",
+    },
+  }),
+];
+
+export function customerFixtureSnapshot(
+  overrides: Partial<CustomerProjectSnapshot> = {},
+): CustomerProjectSnapshot {
+  return parseCustomerProjectSnapshot({
+    ...structuredClone(customerProjectFixture),
+    ...overrides,
+  });
+}

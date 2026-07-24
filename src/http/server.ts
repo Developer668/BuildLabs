@@ -260,7 +260,10 @@ export function createHttpServer(
 
   server.addHook("onRequest", async (request, reply) => {
     if (isElevenLabsToolRequest(request.url)) {
-      if (!dependencies.config.ELEVENLABS_TOOL_SECRET) {
+      if (
+        !dependencies.config.ELEVENLABS_TOOL_SECRET ||
+        !dependencies.config.ELEVENLABS_CAPABILITY_SECRET
+      ) {
         await reply.code(503).send({
           error: "integration_unconfigured",
           message: "The ElevenLabs webhook tool bridge is not configured",
@@ -676,9 +679,11 @@ export function createHttpServer(
           : "unconfigured",
         speechEngineEndpoint: "/v1/integrations/elevenlabs/speech-engine",
         webRtcTokenEndpoint: "/v1/integrations/elevenlabs/webrtc-token",
-        webhookToolsStatus: dependencies.config.ELEVENLABS_TOOL_SECRET
-          ? "configured"
-          : "unconfigured",
+        webhookToolsStatus:
+          dependencies.config.ELEVENLABS_TOOL_SECRET &&
+          dependencies.config.ELEVENLABS_CAPABILITY_SECRET
+            ? "configured"
+            : "unconfigured",
         webhookTools: {
           getCandidate: "/v1/integrations/elevenlabs/tools/get-candidate",
           getCandidateEvidence:
@@ -757,7 +762,7 @@ export function createHttpServer(
                   expectedStatus: candidate.status,
                   expectedUpdatedAt: candidate.updatedAt,
                 },
-                dependencies.config.ELEVENLABS_TOOL_SECRET!,
+                dependencies.config.ELEVENLABS_CAPABILITY_SECRET!,
               ),
             };
           }
@@ -814,7 +819,7 @@ export function createHttpServer(
           const candidate = studioCommands.getCandidate(runId);
           const capability = verifyCancellationCapability(
             cancellationCapability,
-            dependencies.config.ELEVENLABS_TOOL_SECRET!,
+            dependencies.config.ELEVENLABS_CAPABILITY_SECRET!,
             runId,
             systemConversationId,
           );

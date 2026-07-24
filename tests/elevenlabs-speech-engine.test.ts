@@ -57,6 +57,91 @@ describe("ElevenLabsSpeechEngine", () => {
     expect(session.sendResponse).not.toHaveBeenCalled();
   });
 
+  it.each(["disconnect", "close"] as const)(
+    "aborts an active response when its session receives %s",
+    async (event) => {
+      let turnSignal: AbortSignal | undefined;
+      const respond = vi.fn<StudioSubagent["respond"]>(
+        (_transcript, _conversationId, signal) => {
+          turnSignal = signal;
+          return new Promise<string>((resolve) => {
+            signal?.addEventListener(
+              "abort",
+              () => resolve("This response belongs to a closed session."),
+              { once: true },
+            );
+          });
+        },
+      );
+      const fixture = createFixture({ respond });
+      const session = fakeSession();
+
+      fixture.callbacks.onTranscript?.(
+        [{ role: "user", content: "Read the candidate." }],
+        new AbortController().signal,
+        session.value,
+      );
+      await vi.waitFor(() => {
+        expect(turnSignal).toBeDefined();
+      });
+      if (event === "disconnect") {
+        fixture.callbacks.onDisconnect?.(session.value);
+      } else {
+        fixture.callbacks.onClose?.(session.value);
+      }
+      await nextEventLoopTurn();
+
+      expect(turnSignal?.aborted).toBe(true);
+      expect(session.sendResponse).not.toHaveBeenCalled();
+    },
+  );
+
+  it("aborts a superseded response before sending the replacement", async () => {
+    let firstTurnSignal: AbortSignal | undefined;
+    let turn = 0;
+    const respond = vi.fn<StudioSubagent["respond"]>(
+      (_transcript, _conversationId, signal) => {
+        turn += 1;
+        if (turn === 1) {
+          firstTurnSignal = signal;
+          return new Promise<string>((resolve) => {
+            signal?.addEventListener(
+              "abort",
+              () => resolve("This response was superseded."),
+              { once: true },
+            );
+          });
+        }
+        return Promise.resolve("This is the current response.");
+      },
+    );
+    const fixture = createFixture({ respond });
+    const session = fakeSession();
+    const providerSignal = new AbortController().signal;
+
+    fixture.callbacks.onTranscript?.(
+      [{ role: "user", content: "Read the old state." }],
+      providerSignal,
+      session.value,
+    );
+    await vi.waitFor(() => {
+      expect(firstTurnSignal).toBeDefined();
+    });
+    fixture.callbacks.onTranscript?.(
+      [{ role: "user", content: "Read the latest state." }],
+      providerSignal,
+      session.value,
+    );
+    await vi.waitFor(() => {
+      expect(session.sendResponse).toHaveBeenCalledOnce();
+    });
+
+    expect(firstTurnSignal?.aborted).toBe(true);
+    expect(session.sendResponse).toHaveBeenCalledWith(
+      "This is the current response.",
+    );
+  });
+
   it("sends the bounded fallback only while the turn is still active", async () => {
     const fixture = createFixture({
       respond: vi.fn().mockRejectedValue(new Error("build was not found")),

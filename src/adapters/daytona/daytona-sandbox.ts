@@ -21,7 +21,7 @@ import {
   type BuildAssignment,
 } from "../../domain/contract.js";
 import type { FrozenRevision } from "../../domain/run.js";
-import { sha256 } from "../../lib/canonical-json.js";
+import { digestJson, sha256 } from "../../lib/canonical-json.js";
 import { boundText } from "../../lib/redaction.js";
 import type {
   CommandResult,
@@ -34,6 +34,40 @@ import type {
   SandboxSession,
   VerificationSandboxPurpose,
 } from "../../ports/index.js";
+import {
+  buildDaytonaReadinessReport,
+  classifyDaytonaFailure,
+  collectDaytonaResourceMetrics,
+  createDaytonaRoleAcquisitionPolicy,
+  DaytonaAccountApi,
+  DaytonaAcquisitionTimer,
+  DaytonaInMemoryTelemetry,
+  DaytonaRoleAcquisitionQueue,
+  DAYTONA_SDK_VERSION,
+  evaluateDaytonaWarmPoolEligibility,
+  parseDaytonaWarmPoolRoles,
+  resolveDaytonaSdkOtelPolicy,
+  verifyDaytonaWarmPoolClaim,
+  type DaytonaAcquisitionMeasurement,
+  type DaytonaContentFreeLabels,
+  type DaytonaReadinessReport,
+  type DaytonaRoleAcquisitionPolicy,
+  type DaytonaSandboxRole,
+  type DaytonaWarmSandboxObservation,
+} from "./daytona-control-plane.js";
+import {
+  executeDaytonaAsyncCommand,
+  type DaytonaAsyncExecutionReceipt,
+} from "./daytona-operations.js";
+import {
+  assertDaytonaProvisionerSource,
+  assertDaytonaSnapshotRuntime,
+  assertFreshDaytonaSnapshotAttestation,
+  DAYTONA_PINNED_SNAPSHOT_INPUTS,
+  readDaytonaSnapshotAttestation,
+  type DaytonaSnapshotAttestation,
+} from "./daytona-snapshot-attestation.js";
+import { DaytonaJsonlTelemetry } from "./daytona-telemetry.js";
 
 const GIT_EXCLUDES = [
   ".buildlabs/",
@@ -64,6 +98,7 @@ const MAX_RENDER_SCREENSHOT_BYTES = 6 * 1_024 * 1_024;
 const MAX_PIXEL_BASELINE_RESTORE_CAPTURES = 5;
 const PIXEL_BASELINE_RESTORE_PAINT_DELAY_MILLISECONDS = 32;
 const MAX_DOCKER_SANDBOX_INITIALIZATION_ATTEMPTS = 2;
+const ASYNC_COMMAND_MIN_TIMEOUT_SECONDS = 600;
 
 export class DaytonaDockerRuntimeError extends Error {
   override readonly name = "DaytonaDockerRuntimeError";
@@ -2818,8 +2853,13 @@ main().catch((error) => {
   process.exitCode = 1;
 });
 `;
-type DaytonaSandboxRole = "builder" | "verifier-commands" | "verifier-delivery";
 const PROVEN_CONTAINER_IMAGE_TAG = "buildlabs-proof";
+const PROVEN_SNAPSHOT_IDENTITY_SCHEMA =
+  "buildlabs.daytona.proven-snapshot-identity.v1";
+const PROVEN_SNAPSHOT_IDENTITY_PATH =
+  "/home/daytona/.buildlabs-controller/proven-snapshot-identity.json";
+const PROVEN_IMAGE_ARCHIVE_PATH =
+  "/home/daytona/.buildlabs-controller/proven-image.tar";
 const MIN_FROZEN_PREVIEW_TTL_SECONDS = 60;
 const MAX_FROZEN_PREVIEW_TTL_SECONDS = 7 * 24 * 60 * 60;
 const FROZEN_PREVIEW_CLEANUP_GRACE_SECONDS = 5;
@@ -2834,15 +2874,42 @@ export type DaytonaClientPort = Pick<
   [Symbol.asyncDispose]?: () => Promise<void>;
 };
 
+interface DaytonaSessionMeasurementContext {
+  timer: DaytonaAcquisitionTimer;
+  record(measurement: DaytonaAcquisitionMeasurement): void;
+}
+
 export class DaytonaSandboxProvider implements SandboxProvider {
   readonly #client: DaytonaClientPort;
   readonly #defaultSnapshot: string;
+  readonly #target: string | undefined;
+  readonly #attestationPath: string | undefined;
+  readonly #provisionerSourcePath: string | undefined;
+  readonly #warmPoolRoles: ReadonlySet<DaytonaSandboxRole>;
+  readonly #accountApi: DaytonaAccountApi | undefined;
+  readonly #otelRequested: boolean;
+  readonly #otelEnabled: boolean;
+  readonly #otelExporterConfigured: boolean;
+  readonly #otelContentPolicyAttested: boolean;
+  readonly #acquisitionQueue = new DaytonaRoleAcquisitionQueue({
+    builder: 4,
+    "verifier-commands": 4,
+    "verifier-delivery": 4,
+    "frozen-preview": 4,
+  });
+  readonly #telemetry = new DaytonaInMemoryTelemetry();
+  readonly #persistentTelemetry: DaytonaJsonlTelemetry | undefined;
+  readonly #measurements: DaytonaAcquisitionMeasurement[] = [];
   #closePromise: Promise<void> | undefined;
   readonly #fetch: typeof fetch;
   readonly #frozenPreviewOperations = new Map<string, Promise<void>>();
   readonly #frozenPreviewCleanupTimers = new Map<
     string,
-    ReturnType<typeof setTimeout>
+    {
+      sandbox: Sandbox;
+      timer: ReturnType<typeof setTimeout>;
+      measurement: DaytonaAcquisitionTimer;
+    }
   >();
 
   constructor(
@@ -2850,15 +2917,45 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     client?: DaytonaClientPort,
     fetchImplementation: typeof fetch = globalThis.fetch,
   ) {
+    const exporterConfigured = Boolean(
+      process.env.OTEL_EXPORTER_OTLP_ENDPOINT ??
+      process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT,
+    );
+    const otelPolicy = resolveDaytonaSdkOtelPolicy({
+      requested: config.DAYTONA_OTEL_ENABLED ?? false,
+      exporterConfigured,
+      safePolicyAttestation: config.DAYTONA_OTEL_SAFE_POLICY_ATTESTATION,
+    });
     this.#client =
       client ??
       new Daytona({
         apiKey: config.DAYTONA_API_KEY,
         apiUrl: config.DAYTONA_API_URL,
         ...(config.DAYTONA_TARGET ? { target: config.DAYTONA_TARGET } : {}),
-        otelEnabled: config.DAYTONA_OTEL_ENABLED,
+        otelEnabled: otelPolicy.enabled,
       });
     this.#defaultSnapshot = config.DAYTONA_BUILD_SNAPSHOT;
+    this.#target = config.DAYTONA_TARGET;
+    this.#attestationPath = config.DAYTONA_SNAPSHOT_ATTESTATION_PATH;
+    this.#provisionerSourcePath = config.DAYTONA_PROVISIONER_SOURCE_PATH;
+    this.#warmPoolRoles = new Set(
+      parseDaytonaWarmPoolRoles(config.DAYTONA_WARM_POOL_ROLES),
+    );
+    this.#accountApi =
+      config.DAYTONA_API_KEY && config.DAYTONA_API_URL
+        ? new DaytonaAccountApi(
+            config.DAYTONA_API_URL,
+            config.DAYTONA_API_KEY,
+            fetchImplementation,
+          )
+        : undefined;
+    this.#otelRequested = otelPolicy.requested;
+    this.#otelEnabled = otelPolicy.enabled;
+    this.#otelExporterConfigured = otelPolicy.exporterConfigured;
+    this.#otelContentPolicyAttested = otelPolicy.contentPolicyAttested;
+    this.#persistentTelemetry = config.DAYTONA_TELEMETRY_PATH
+      ? new DaytonaJsonlTelemetry(config.DAYTONA_TELEMETRY_PATH)
+      : undefined;
     this.#fetch = fetchImplementation;
   }
 
@@ -2867,22 +2964,66 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     assignment: BuildAssignment,
     signal?: AbortSignal,
   ): Promise<SandboxSession> {
-    return initializeDaytonaSandboxWithDockerRetry(
-      () => this.#createSandbox(runId, assignment, "builder", signal),
-      async (sandbox) => {
-        const workDir = await resolveSandboxWorkDir(sandbox, signal);
-        const session = new DaytonaSandboxSession(
-          sandbox,
-          workDir,
-          assignment.limits.maxToolOutputBytes,
-          "builder",
-        );
-        await ensureDockerRuntime(sandbox, workDir, signal);
-        await session.initializeRepository(signal);
-        return session;
-      },
-      signal,
+    const acquisition = await this.#prepareAcquisition(
+      runId,
+      assignment,
+      "builder",
     );
+    try {
+      return await initializeDaytonaSandboxWithDockerRetry(
+        () =>
+          this.#createSandbox(
+            runId,
+            assignment,
+            acquisition.policy,
+            acquisition.timer,
+            signal,
+          ),
+        async (sandbox) => {
+          acquisition.timer.start("readiness");
+          const workDir = await resolveSandboxWorkDir(sandbox, signal);
+          await this.#assertFreshAcquisition(
+            sandbox,
+            acquisition.attestation,
+            acquisition.policy,
+            signal,
+          );
+          acquisition.timer.end("readiness");
+          const session = new DaytonaSandboxSession(
+            sandbox,
+            workDir,
+            assignment.limits.maxToolOutputBytes,
+            "builder",
+            this.#measurementContext(acquisition.timer),
+          );
+          acquisition.timer.start("docker");
+          await ensureDockerRuntime(sandbox, workDir, signal);
+          await this.#assertRuntimeAttestation(
+            sandbox,
+            acquisition.attestation,
+            acquisition.policy,
+            workDir,
+            signal,
+          );
+          acquisition.timer.end("docker");
+          await session.initializeRepository(signal);
+          return session;
+        },
+        signal,
+        MAX_DOCKER_SANDBOX_INITIALIZATION_ATTEMPTS,
+        {
+          start: () => acquisition.timer.start("retry"),
+          end: () => acquisition.timer.end("retry"),
+        },
+      );
+    } catch (error) {
+      this.#recordMeasurement(
+        acquisition.timer.complete(signal?.aborted ? "cancelled" : "failed", {
+          failure: error,
+        }),
+      );
+      throw error;
+    }
   }
 
   async createVerifier(
@@ -2902,44 +3043,84 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     }
     const role: DaytonaSandboxRole =
       purpose === "commands" ? "verifier-commands" : "verifier-delivery";
-    return initializeDaytonaSandboxWithDockerRetry(
-      () => this.#createSandbox(runId, assignment, role, signal),
-      async (sandbox) => {
-        const baseWorkDir = await resolveSandboxWorkDir(sandbox, signal);
-        const verifierWorkDir = posix.join(
-          baseWorkDir,
-          `.buildlabs-verifier-${purpose}-${revision.sourceDigest.slice(0, 16)}`,
-        );
-        const session = new DaytonaSandboxSession(
-          sandbox,
-          verifierWorkDir,
-          assignment.limits.maxToolOutputBytes,
-          role,
-        );
-        await ensureDockerRuntime(sandbox, baseWorkDir, signal);
-        const directory = await withAbort(
-          sandbox.process.executeCommand(
-            `mkdir -p -- ${shellQuote(verifierWorkDir)}`,
-            baseWorkDir,
-            {},
-            30,
+    const acquisition = await this.#prepareAcquisition(runId, assignment, role);
+    try {
+      return await initializeDaytonaSandboxWithDockerRetry(
+        () =>
+          this.#createSandbox(
+            runId,
+            assignment,
+            acquisition.policy,
+            acquisition.timer,
+            signal,
           ),
-          signal,
-        );
-        if (directory.exitCode !== 0) {
-          throw new Error("Could not create the Daytona verifier workspace");
-        }
-        await session.hydrateFromControllerExport(
-          runId,
-          purpose,
-          revision,
-          source,
-          signal,
-        );
-        return session;
-      },
-      signal,
-    );
+        async (sandbox) => {
+          acquisition.timer.start("readiness");
+          const baseWorkDir = await resolveSandboxWorkDir(sandbox, signal);
+          await this.#assertFreshAcquisition(
+            sandbox,
+            acquisition.attestation,
+            acquisition.policy,
+            signal,
+          );
+          acquisition.timer.end("readiness");
+          const verifierWorkDir = posix.join(
+            baseWorkDir,
+            `.buildlabs-verifier-${purpose}-${revision.sourceDigest.slice(0, 16)}`,
+          );
+          const session = new DaytonaSandboxSession(
+            sandbox,
+            verifierWorkDir,
+            assignment.limits.maxToolOutputBytes,
+            role,
+            this.#measurementContext(acquisition.timer),
+          );
+          acquisition.timer.start("docker");
+          await ensureDockerRuntime(sandbox, baseWorkDir, signal);
+          await this.#assertRuntimeAttestation(
+            sandbox,
+            acquisition.attestation,
+            acquisition.policy,
+            baseWorkDir,
+            signal,
+          );
+          acquisition.timer.end("docker");
+          const directory = await withAbort(
+            sandbox.process.executeCommand(
+              `mkdir -p -- ${shellQuote(verifierWorkDir)}`,
+              baseWorkDir,
+              {},
+              30,
+            ),
+            signal,
+          );
+          if (directory.exitCode !== 0) {
+            throw new Error("Could not create the Daytona verifier workspace");
+          }
+          await session.hydrateFromControllerExport(
+            runId,
+            purpose,
+            revision,
+            source,
+            signal,
+          );
+          return session;
+        },
+        signal,
+        MAX_DOCKER_SANDBOX_INITIALIZATION_ATTEMPTS,
+        {
+          start: () => acquisition.timer.start("retry"),
+          end: () => acquisition.timer.end("retry"),
+        },
+      );
+    } catch (error) {
+      this.#recordMeasurement(
+        acquisition.timer.complete(signal?.aborted ? "cancelled" : "failed", {
+          failure: error,
+        }),
+      );
+      throw error;
+    }
   }
 
   async getPreview(
@@ -3003,157 +3184,274 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     signal?: AbortSignal,
   ): Promise<PreviewTarget> {
     throwIfAborted(signal);
-    const sourceSnapshot = await withAbort(
-      this.#client.snapshot.get(request.snapshotId),
-      signal,
+    const policy = createDaytonaRoleAcquisitionPolicy({
+      role: "frozen-preview",
+      snapshot: request.snapshotId,
+      ...(this.#target ? { target: this.#target } : {}),
+      snapshotResources: {
+        cpu: 2,
+        memoryGiB: 4,
+        diskGiB: 10,
+      },
+      warmPoolEnabled: false,
+    });
+    const measurement = new DaytonaAcquisitionTimer(
+      {
+        runId: request.runId,
+        projectId: request.projectId ?? "unavailable",
+        candidateId: request.candidateId ?? "unavailable",
+        role: "frozen-preview",
+      },
+      evaluateDaytonaWarmPoolEligibility(policy, {
+        snapshot: request.snapshotId,
+        envVars: { BUILDLABS_FROZEN_PREVIEW: "true" },
+      }).policySha256,
     );
-    if (
-      sourceSnapshot.name !== request.snapshotId ||
-      sourceSnapshot.state !== "active"
-    ) {
-      throw new Error("The proven Daytona snapshot is not active");
-    }
-
     const lifecycleMinutes =
       Math.ceil(request.expiresInSeconds / 60) +
       FROZEN_PREVIEW_LIFECYCLE_BUFFER_MINUTES;
     const identityLabels = frozenPreviewIdentityLabels(request);
     const effectLabels = frozenPreviewEffectLabels(request);
-    const matches = await findFrozenPreviewSandboxes(
-      this.#client,
-      identityLabels,
+    measurement.start("queue");
+    const lease = await this.#acquisitionQueue.acquire(
+      "frozen-preview",
       signal,
     );
-    if (matches.length > 1) {
-      throw new Error(
-        "Multiple Daytona sandboxes claim the same proven preview identity",
-      );
-    }
-
-    let previewSandbox = matches[0];
-    if (!previewSandbox) {
-      const sandboxName = frozenPreviewSandboxName(request.eventId);
-      try {
-        previewSandbox = await withAbort(
-          this.#client.create(
-            {
-              name: sandboxName,
-              snapshot: request.snapshotId,
-              envVars: {
-                BUILDLABS_RUN_ID: request.runId,
-                BUILDLABS_PREVIEW_EVENT_ID: request.eventId,
-                CI: "true",
-              },
-              labels: {
-                ...identityLabels,
-                ...effectLabels,
-              },
-              public: false,
-              ephemeral: true,
-              autoStopInterval: lifecycleMinutes,
-              ttlMinutes: lifecycleMinutes,
-            },
-            { timeout: 120 },
-          ),
-          signal,
-        );
-      } catch (error) {
-        throwIfAborted(signal);
-        previewSandbox = await withAbort(
-          this.#client.get(sandboxName),
-          signal,
-        ).catch(() => undefined);
-        if (!previewSandbox) {
-          throw error;
-        }
-      }
-    }
-
-    await withAbort(previewSandbox.refreshData(), signal);
-    assertFrozenPreviewSandbox(
-      previewSandbox,
-      request.snapshotId,
-      identityLabels,
-    );
-    const priorEffectKey = previewSandbox.labels["buildlabs.effect-key"];
-    if (
-      priorEffectKey === effectLabels["buildlabs.effect-key"] &&
-      previewSandbox.labels["buildlabs.effect-input"] !==
-        effectLabels["buildlabs.effect-input"]
-    ) {
-      throw new Error(
-        "The frozen preview idempotency key was reused with different input",
-      );
-    }
-    if (priorEffectKey !== effectLabels["buildlabs.effect-key"]) {
-      await withAbort(
-        previewSandbox.setLabels({
-          ...previewSandbox.labels,
-          ...identityLabels,
-          ...effectLabels,
-        }),
+    measurement.end("queue");
+    let previewSandbox: Sandbox | undefined;
+    let createdByThisAttempt = false;
+    try {
+      measurement.start("readiness");
+      const sourceSnapshot = await withAbort(
+        this.#client.snapshot.get(request.snapshotId),
         signal,
       );
-    }
-    if (previewSandbox.state !== "started") {
-      await withAbort(previewSandbox.start(120), signal);
-    }
-    await withAbort(previewSandbox.setTtl(lifecycleMinutes), signal);
-    await withAbort(previewSandbox.refreshData(), signal);
-    assertFrozenPreviewSandbox(
-      previewSandbox,
-      request.snapshotId,
-      identityLabels,
-    );
+      if (
+        sourceSnapshot.name !== request.snapshotId ||
+        sourceSnapshot.state !== "active" ||
+        sourceSnapshot.cpu !== policy.snapshotResources.cpu ||
+        sourceSnapshot.mem !== policy.snapshotResources.memoryGiB ||
+        sourceSnapshot.disk !== policy.snapshotResources.diskGiB
+      ) {
+        throw new Error(
+          "The proven Daytona snapshot is not active with pinned resources",
+        );
+      }
+      measurement.end("readiness");
 
-    const workDir =
-      (await withAbort(previewSandbox.getWorkDir(), signal)) ?? ".";
-    await ensureDockerRuntime(previewSandbox, workDir, signal);
-    const session = new DaytonaSandboxSession(
-      previewSandbox,
-      workDir,
-      MAX_COMMAND_ENVELOPE_BYTES,
-      "verifier-delivery",
-    );
-    await session.sealNetworkForProof(signal);
-    await session.startContainerPreview(
-      PROVEN_CONTAINER_IMAGE_TAG,
-      request.port,
-      signal,
-    );
-    const preview = await session.getPreview(
-      request.port,
-      request.expiresInSeconds,
-    );
-    await verifyFrozenPreviewReadiness({
-      fetchImplementation: this.#fetch,
-      preview,
-      expectedRevisionHash: request.revisionHash,
-      expectedArtifactSha256: request.artifactSha256,
-      signal,
-    });
-    throwIfAborted(signal);
-    this.#scheduleFrozenPreviewCleanup(
-      previewSandbox,
-      request.expiresInSeconds + FROZEN_PREVIEW_CLEANUP_GRACE_SECONDS,
-    );
-    return preview;
+      measurement.start("claim_or_create");
+      const matches = await findFrozenPreviewSandboxes(
+        this.#client,
+        identityLabels,
+        signal,
+      );
+      if (matches.length > 1) {
+        throw new Error(
+          "Multiple Daytona sandboxes claim the same proven preview identity",
+        );
+      }
+      previewSandbox = matches[0];
+      if (!previewSandbox) {
+        const sandboxName = frozenPreviewSandboxName(request.eventId);
+        try {
+          previewSandbox = await withAbort(
+            this.#client.create(
+              {
+                name: sandboxName,
+                snapshot: request.snapshotId,
+                envVars: {
+                  BUILDLABS_RUN_ID: request.runId,
+                  BUILDLABS_PREVIEW_EVENT_ID: request.eventId,
+                  CI: "true",
+                },
+                labels: {
+                  ...identityLabels,
+                  ...effectLabels,
+                },
+                public: false,
+                ephemeral: true,
+                autoStopInterval: lifecycleMinutes,
+                ttlMinutes: lifecycleMinutes,
+              },
+              { timeout: policy.createTimeoutSeconds },
+            ),
+            signal,
+          );
+          createdByThisAttempt = true;
+          measurement.setWarmClaim("verified_cold_create");
+        } catch (error) {
+          throwIfAborted(signal);
+          previewSandbox = await withAbort(
+            this.#client.get(sandboxName),
+            signal,
+          ).catch(() => undefined);
+          if (!previewSandbox) {
+            throw error;
+          }
+        }
+      }
+      measurement.end("claim_or_create");
+
+      measurement.start("readiness");
+      await withAbort(previewSandbox.refreshData(), signal);
+      assertFrozenPreviewSandbox(previewSandbox, policy, identityLabels);
+      const priorEffectKey = previewSandbox.labels["buildlabs.effect-key"];
+      if (
+        priorEffectKey === effectLabels["buildlabs.effect-key"] &&
+        previewSandbox.labels["buildlabs.effect-input"] !==
+          effectLabels["buildlabs.effect-input"]
+      ) {
+        throw new Error(
+          "The frozen preview idempotency key was reused with different input",
+        );
+      }
+      if (priorEffectKey !== effectLabels["buildlabs.effect-key"]) {
+        await withAbort(
+          previewSandbox.setLabels({
+            ...previewSandbox.labels,
+            ...identityLabels,
+            ...effectLabels,
+          }),
+          signal,
+        );
+      }
+      if (previewSandbox.state !== "started") {
+        await withAbort(previewSandbox.start(120), signal);
+      }
+      await withAbort(previewSandbox.setTtl(lifecycleMinutes), signal);
+      await withAbort(previewSandbox.refreshData(), signal);
+      assertFrozenPreviewSandbox(previewSandbox, policy, identityLabels);
+      const workDir =
+        (await withAbort(previewSandbox.getWorkDir(), signal)) ?? ".";
+      const snapshotIdentity = await assertFrozenSnapshotIdentity(
+        previewSandbox,
+        request,
+        signal,
+      );
+      measurement.end("readiness");
+
+      measurement.start("docker");
+      await ensureDockerRuntime(previewSandbox, workDir, signal);
+      await restoreFrozenSnapshotImage(
+        previewSandbox,
+        workDir,
+        snapshotIdentity,
+        signal,
+      );
+      measurement.end("docker");
+      const session = new DaytonaSandboxSession(
+        previewSandbox,
+        workDir,
+        MAX_COMMAND_ENVELOPE_BYTES,
+        "frozen-preview",
+        this.#measurementContext(measurement),
+      );
+      await session.sealNetworkForProof(signal);
+      await session.startContainerPreview(
+        PROVEN_CONTAINER_IMAGE_TAG,
+        request.port,
+        signal,
+      );
+      const preview = await session.getPreview(
+        request.port,
+        request.expiresInSeconds,
+      );
+      await verifyFrozenPreviewReadiness({
+        fetchImplementation: this.#fetch,
+        preview,
+        expectedRevisionHash: request.revisionHash,
+        expectedArtifactSha256: request.artifactSha256,
+        signal,
+      });
+      throwIfAborted(signal);
+      this.#scheduleFrozenPreviewCleanup(
+        previewSandbox,
+        request.expiresInSeconds + FROZEN_PREVIEW_CLEANUP_GRACE_SECONDS,
+        measurement,
+      );
+      return preview;
+    } catch (error) {
+      let failure = error;
+      if (previewSandbox && createdByThisAttempt) {
+        const scheduled = this.#frozenPreviewCleanupTimers.get(
+          previewSandbox.id,
+        );
+        if (scheduled) {
+          clearTimeout(scheduled.timer);
+          this.#frozenPreviewCleanupTimers.delete(previewSandbox.id);
+          this.#recordMeasurement(
+            scheduled.measurement.complete("failed", { failure: error }),
+          );
+        }
+        measurement.start("teardown");
+        try {
+          await cleanupFailedDaytonaSandbox(previewSandbox, error);
+        } catch (cleanupError) {
+          failure = cleanupError;
+        } finally {
+          measurement.end("teardown");
+        }
+      }
+      this.#recordMeasurement(
+        measurement.complete(signal?.aborted ? "cancelled" : "failed", {
+          failure,
+        }),
+      );
+      throw failure;
+    } finally {
+      lease.release();
+    }
   }
 
   #scheduleFrozenPreviewCleanup(
     sandbox: Sandbox,
     expiresInSeconds: number,
+    measurement: DaytonaAcquisitionTimer,
   ): void {
     const existing = this.#frozenPreviewCleanupTimers.get(sandbox.id);
     if (existing) {
-      clearTimeout(existing);
+      clearTimeout(existing.timer);
+      this.#recordMeasurement(existing.measurement.complete("passed"));
     }
-    const timer = setTimeout(() => {
-      this.#frozenPreviewCleanupTimers.delete(sandbox.id);
-      void sandbox.delete(120, true).catch(() => undefined);
-    }, expiresInSeconds * 1_000);
-    timer.unref();
-    this.#frozenPreviewCleanupTimers.set(sandbox.id, timer);
+    const entry = {
+      sandbox,
+      measurement,
+      timer: setTimeout(() => {
+        void this.#cleanupFrozenPreview(sandbox.id, entry);
+      }, expiresInSeconds * 1_000),
+    };
+    entry.timer.unref();
+    this.#frozenPreviewCleanupTimers.set(sandbox.id, entry);
+  }
+
+  async #cleanupFrozenPreview(
+    sandboxId: string,
+    entry: {
+      sandbox: Sandbox;
+      timer: ReturnType<typeof setTimeout>;
+      measurement: DaytonaAcquisitionTimer;
+    },
+  ): Promise<void> {
+    if (this.#frozenPreviewCleanupTimers.get(sandboxId) !== entry) {
+      return;
+    }
+    this.#frozenPreviewCleanupTimers.delete(sandboxId);
+    clearTimeout(entry.timer);
+    entry.measurement.start("teardown");
+    try {
+      await cleanupFailedDaytonaSandbox(
+        entry.sandbox,
+        new Error("Frozen preview lifecycle expired"),
+      );
+      entry.measurement.end("teardown");
+      this.#recordMeasurement(entry.measurement.complete("passed"));
+    } catch (error) {
+      entry.measurement.end("teardown");
+      this.#recordMeasurement(
+        entry.measurement.complete("failed", { failure: error }),
+      );
+      throw error;
+    }
   }
 
   async health(signal?: AbortSignal): Promise<void> {
@@ -3164,23 +3462,265 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     );
     if (
       snapshot.state !== "active" ||
-      snapshot.cpu < 2 ||
-      snapshot.mem < 4 ||
-      snapshot.disk < 8
+      snapshot.cpu !== DAYTONA_PINNED_SNAPSHOT_INPUTS.resources.cpu ||
+      snapshot.mem !== DAYTONA_PINNED_SNAPSHOT_INPUTS.resources.memoryGiB ||
+      snapshot.disk !== DAYTONA_PINNED_SNAPSHOT_INPUTS.resources.diskGiB
     ) {
       throw new Error(
-        "The configured Daytona build snapshot is not active with at least 2 CPU, 4 GiB memory, and 8 GiB disk",
+        "The configured Daytona build snapshot is not active with the pinned 2 CPU, 4 GiB memory, and 10 GiB disk",
       );
     }
+    const attestation = await this.#loadAttestation();
+    if (attestation) {
+      assertSnapshotApiMatchesAttestation(snapshot, attestation);
+    }
+  }
+
+  async readinessReport(signal?: AbortSignal): Promise<DaytonaReadinessReport> {
+    const checkedAt = new Date().toISOString();
+    let snapshot:
+      Awaited<ReturnType<DaytonaClientPort["snapshot"]["get"]>> | undefined;
+    let apiReachable = false;
+    let organizationId: string | undefined;
+    const iterator = this.#client.list({ limit: 1 });
+    try {
+      const first = await withAbort(iterator.next(), signal);
+      if (!first.done) {
+        organizationId = first.value.organizationId;
+      }
+      apiReachable = true;
+    } catch {
+      throwIfAborted(signal);
+    } finally {
+      void iterator.return?.().catch(() => undefined);
+    }
+    try {
+      snapshot = await withAbort(
+        this.#client.snapshot.get(this.#defaultSnapshot),
+        signal,
+      );
+      apiReachable = true;
+      organizationId = snapshot.organizationId;
+    } catch {
+      throwIfAborted(signal);
+    }
+
+    let attestation: DaytonaSnapshotAttestation | undefined;
+    let snapshotAttestation:
+      "missing" | "invalid" | "verified" | "runtime_verified" = "missing";
+    if (this.#attestationPath) {
+      try {
+        attestation = await this.#loadAttestation();
+        if (!attestation) {
+          throw new Error("Daytona snapshot attestation is unavailable");
+        }
+        if (snapshot) {
+          assertSnapshotApiMatchesAttestation(snapshot, attestation);
+        }
+        snapshotAttestation = "verified";
+      } catch {
+        snapshotAttestation = "invalid";
+      }
+    }
+
+    let warmPools:
+      | Awaited<ReturnType<DaytonaAccountApi["listWarmPools"]>>["pools"]
+      | undefined;
+    if (this.#accountApi && this.#warmPoolRoles.size > 0) {
+      try {
+        warmPools = (await this.#accountApi.listWarmPools(signal)).pools;
+      } catch {
+        throwIfAborted(signal);
+      }
+    }
+    let accountLimits:
+      Awaited<ReturnType<DaytonaAccountApi["getAccountLimits"]>> | undefined;
+    if (this.#accountApi && organizationId) {
+      try {
+        accountLimits = await this.#accountApi.getAccountLimits(
+          organizationId,
+          signal,
+        );
+      } catch {
+        throwIfAborted(signal);
+      }
+    }
+    if (accountLimits) {
+      const totals = accountLimits.regions?.reduce(
+        (result, region) => ({
+          cpu_used: result.cpu_used + region.cpu.used,
+          cpu_limit: result.cpu_limit + region.cpu.limit,
+          memory_gib_used: result.memory_gib_used + region.memoryGiB.used,
+          memory_gib_limit: result.memory_gib_limit + region.memoryGiB.limit,
+          disk_gib_used: result.disk_gib_used + region.diskGiB.used,
+          disk_gib_limit: result.disk_gib_limit + region.diskGiB.limit,
+        }),
+        {
+          cpu_used: 0,
+          cpu_limit: 0,
+          memory_gib_used: 0,
+          memory_gib_limit: 0,
+          disk_gib_used: 0,
+          disk_gib_limit: 0,
+        },
+      );
+      this.#emitTelemetry({
+        schema: "buildlabs.daytona.telemetry.v1",
+        emittedAt: checkedAt,
+        event: "quota",
+        labels: {
+          runId: "provider-readiness",
+          projectId: "unavailable",
+          candidateId: "unavailable",
+          role: "builder",
+        },
+        outcome: "observed",
+        values: {
+          snapshot_used: accountLimits.snapshots?.used ?? -1,
+          snapshot_limit: accountLimits.snapshots?.limit ?? -1,
+          volume_used: accountLimits.volumes?.used ?? -1,
+          volume_limit: accountLimits.volumes?.limit ?? -1,
+          ...(totals ?? {}),
+        },
+      });
+    }
+    if (this.#persistentTelemetry) {
+      this.#emitTelemetry({
+        schema: "buildlabs.daytona.telemetry.v1",
+        emittedAt: checkedAt,
+        event: "lifecycle",
+        labels: {
+          runId: "provider-readiness",
+          projectId: "unavailable",
+          candidateId: "unavailable",
+          role: "builder",
+        },
+        outcome: "observed",
+        values: { probe: "persistent-write" },
+      });
+    }
+    await this.#persistentTelemetry?.flush();
+    const controllerTelemetryFailureCode =
+      this.#persistentTelemetry?.failureCode();
+    return buildDaytonaReadinessReport({
+      checkedAt,
+      apiConfigured: this.#accountApi !== undefined,
+      apiReachable,
+      sdkVersion: DAYTONA_SDK_VERSION,
+      expectedSnapshot: this.#defaultSnapshot,
+      ...(snapshot
+        ? {
+            snapshot: {
+              name: snapshot.name,
+              state: snapshot.state,
+              ...(this.#target ? { target: this.#target } : {}),
+              cpu: snapshot.cpu,
+              memoryGiB: snapshot.mem,
+              diskGiB: snapshot.disk,
+            },
+          }
+        : {}),
+      snapshotAttestation,
+      ...(attestation
+        ? {
+            attestedProbe: {
+              payloadSha256: attestation.payloadSha256,
+              validatedAt: attestation.payload.validation.validatedAt,
+            },
+          }
+        : {}),
+      lifecycleTransport:
+        process.env.DAYTONA_USE_DEPRECATED_POLLING === "true"
+          ? "deprecated_polling_policy"
+          : "automatic_unobserved",
+      ...(attestation ? { signedPreviewProbe: "passed" } : {}),
+      metrics: {
+        latest: attestation ? "passed" : "not_probed",
+        historical: attestation ? "passed" : "not_probed",
+      },
+      sdkOtel: {
+        requested: this.#otelRequested,
+        enabled: this.#otelEnabled,
+        exporterConfigured: this.#otelExporterConfigured,
+        contentPolicyAttested: this.#otelContentPolicyAttested,
+      },
+      sandboxOtel: {
+        accountConfigured: "unknown",
+        contentPolicyAttested: false,
+      },
+      controllerTelemetry: {
+        persistent: this.#persistentTelemetry !== undefined,
+        ...(this.#persistentTelemetry
+          ? {
+              writeProbe: controllerTelemetryFailureCode
+                ? ("failed" as const)
+                : ("passed" as const),
+            }
+          : {}),
+        ...(controllerTelemetryFailureCode
+          ? { failureCode: controllerTelemetryFailureCode }
+          : {}),
+      },
+      warmPoolRoles: [...this.#warmPoolRoles],
+      ...(warmPools ? { warmPools } : {}),
+      ...(accountLimits ? { accountLimits } : {}),
+      customPreviewProxyConfigured: false,
+    });
+  }
+
+  acquisitionMeasurements(): DaytonaAcquisitionMeasurement[] {
+    return this.#measurements.map((measurement) =>
+      structuredClone(measurement),
+    );
+  }
+
+  telemetryEvents(): ReturnType<DaytonaInMemoryTelemetry["snapshot"]> {
+    return this.#telemetry.snapshot();
   }
 
   close(signal?: AbortSignal): Promise<void> {
     this.#closePromise ??= Promise.resolve().then(async () => {
-      for (const timer of this.#frozenPreviewCleanupTimers.values()) {
-        clearTimeout(timer);
+      const cleanupErrors: unknown[] = [];
+      if (this.#persistentTelemetry) {
+        this.#emitTelemetry({
+          schema: "buildlabs.daytona.telemetry.v1",
+          emittedAt: new Date().toISOString(),
+          event: "lifecycle",
+          labels: {
+            runId: "provider-shutdown",
+            projectId: "unavailable",
+            candidateId: "unavailable",
+            role: "builder",
+          },
+          outcome: "observed",
+          values: { probe: "persistent-flush" },
+        });
       }
-      this.#frozenPreviewCleanupTimers.clear();
-      await this.#client[Symbol.asyncDispose]?.();
+      for (const [sandboxId, entry] of [
+        ...this.#frozenPreviewCleanupTimers.entries(),
+      ]) {
+        try {
+          await this.#cleanupFrozenPreview(sandboxId, entry);
+        } catch (error) {
+          cleanupErrors.push(error);
+        }
+      }
+      try {
+        await this.#client[Symbol.asyncDispose]?.();
+      } catch (error) {
+        cleanupErrors.push(error);
+      }
+      try {
+        await this.#persistentTelemetry?.flushOrThrow();
+      } catch (error) {
+        cleanupErrors.push(error);
+      }
+      if (cleanupErrors.length > 0) {
+        throw new AggregateError(
+          cleanupErrors,
+          "Daytona provider shutdown did not complete deterministic cleanup",
+        );
+      }
     });
     return withAbort(this.#closePromise, signal);
   }
@@ -3192,7 +3732,8 @@ export class DaytonaSandboxProvider implements SandboxProvider {
   async #createSandbox(
     runId: string,
     assignment: BuildAssignment,
-    role: DaytonaSandboxRole,
+    policy: DaytonaRoleAcquisitionPolicy,
+    timer: DaytonaAcquisitionTimer,
     signal?: AbortSignal,
   ): Promise<Sandbox> {
     throwIfAborted(signal);
@@ -3202,42 +3743,427 @@ export class DaytonaSandboxProvider implements SandboxProvider {
         "The assignment requested a Daytona snapshot outside the configured build snapshot allowlist",
       );
     }
-    const sandbox = await this.#client.create(
+    timer.start("queue");
+    const lease = await this.#acquisitionQueue.acquire(policy.role, signal);
+    timer.end("queue");
+    try {
+      const eligibility = evaluateDaytonaWarmPoolEligibility(policy, {
+        snapshot,
+        ...(policy.target ? { target: policy.target } : {}),
+      });
+      let before: DaytonaWarmSandboxObservation[] | undefined;
+      if (eligibility.eligible && this.#accountApi) {
+        try {
+          before = (
+            await this.#accountApi.observeWarmSandboxes(signal)
+          ).sandboxes.filter(
+            (entry) =>
+              entry.snapshot === policy.snapshot &&
+              (policy.target === undefined || entry.target === policy.target),
+          );
+        } catch {
+          throwIfAborted(signal);
+        }
+      }
+      const environment = {
+        BUILDLABS_RUN_ID: runId,
+        BUILDLABS_SANDBOX_ROLE: policy.role,
+        CI: "true",
+        DAYTONA_SANDBOX_OTEL_EXTRA_LABELS: daytonaTelemetryLabels(
+          runId,
+          assignment,
+          policy.role,
+        ),
+      };
+      timer.start("claim_or_create");
+      let sandbox: Sandbox;
+      try {
+        sandbox = await this.#client.create(
+          {
+            language: assignment.sandbox.language,
+            snapshot,
+            ...(eligibility.eligible ? {} : { envVars: environment }),
+            labels: {
+              "buildlabs.owner": "buildlabs-controller",
+              "buildlabs.managed": "true",
+              "buildlabs.run-id": runId,
+              "buildlabs.project-id": assignment.projectId,
+              "buildlabs.candidate-id": assignment.candidateId,
+              "buildlabs.role": policy.role,
+              "buildlabs.policy": eligibility.policySha256.slice(0, 32),
+            },
+            public: false,
+            autoStopInterval: assignment.sandbox.autoStopMinutes,
+            autoArchiveInterval: assignment.sandbox.autoArchiveMinutes,
+            ttlMinutes: Math.max(
+              assignment.sandbox.autoArchiveMinutes,
+              Math.ceil(assignment.limits.wallClockSeconds / 60) + 30,
+            ),
+          },
+          { timeout: policy.createTimeoutSeconds },
+        );
+      } finally {
+        timer.end("claim_or_create");
+      }
+      try {
+        throwIfAborted(signal);
+        await withAbort(sandbox.refreshData(), signal);
+        if (eligibility.eligible) {
+          const claim = verifyDaytonaWarmPoolClaim({
+            ...(before ? { before } : {}),
+            returnedSandbox: {
+              id: sandbox.id,
+              ...(sandbox.snapshot ? { snapshot: sandbox.snapshot } : {}),
+              target: sandbox.target,
+              user: sandbox.user,
+              cpu: sandbox.cpu,
+              memoryGiB: sandbox.memory,
+              diskGiB: sandbox.disk,
+            },
+            policy,
+          });
+          timer.setWarmClaim(claim.outcome);
+          await withAbort(sandbox.updateEnv(environment), signal);
+        } else {
+          timer.setWarmClaim("verified_cold_create");
+        }
+        return sandbox;
+      } catch (error) {
+        await cleanupFailedDaytonaSandbox(sandbox, error);
+        throw error;
+      }
+    } finally {
+      lease.release();
+    }
+  }
+
+  async #prepareAcquisition(
+    runId: string,
+    assignment: BuildAssignment,
+    role: Exclude<DaytonaSandboxRole, "frozen-preview">,
+  ): Promise<{
+    policy: DaytonaRoleAcquisitionPolicy;
+    timer: DaytonaAcquisitionTimer;
+    attestation?: DaytonaSnapshotAttestation;
+  }> {
+    const snapshot = assignment.sandbox.snapshot ?? this.#defaultSnapshot;
+    if (snapshot !== this.#defaultSnapshot) {
+      throw new Error(
+        "The assignment requested a Daytona snapshot outside the configured build snapshot allowlist",
+      );
+    }
+    const attestation = await this.#loadAttestation();
+    const policy = createDaytonaRoleAcquisitionPolicy({
+      role,
+      snapshot,
+      ...(this.#target ? { target: this.#target } : {}),
+      snapshotResources: attestation?.payload.snapshot.resources ?? {
+        cpu: 2,
+        memoryGiB: 4,
+        diskGiB: 10,
+      },
+      warmPoolEnabled:
+        this.#warmPoolRoles.has(role) && attestation !== undefined,
+    });
+    const policySha256 = evaluateDaytonaWarmPoolEligibility(policy, {
+      snapshot,
+      ...(this.#target ? { target: this.#target } : {}),
+    }).policySha256;
+    return {
+      policy,
+      timer: new DaytonaAcquisitionTimer(
+        contentFreeLabels(runId, assignment, role),
+        policySha256,
+      ),
+      ...(attestation ? { attestation } : {}),
+    };
+  }
+
+  async #loadAttestation(): Promise<DaytonaSnapshotAttestation | undefined> {
+    if (!this.#attestationPath) {
+      return undefined;
+    }
+    const attestation = await readDaytonaSnapshotAttestation(
+      this.#attestationPath,
+    );
+    assertFreshDaytonaSnapshotAttestation(attestation);
+    if (this.#provisionerSourcePath) {
+      assertDaytonaProvisionerSource(
+        attestation,
+        await readFile(this.#provisionerSourcePath),
+      );
+    }
+    if (attestation.payload.snapshot.name !== this.#defaultSnapshot) {
+      throw new Error(
+        "Daytona snapshot attestation does not match the configured snapshot",
+      );
+    }
+    return attestation;
+  }
+
+  async #assertFreshAcquisition(
+    sandbox: Sandbox,
+    attestation: DaytonaSnapshotAttestation | undefined,
+    policy: DaytonaRoleAcquisitionPolicy,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    await withAbort(sandbox.refreshData(), signal);
+    const expectedResources =
+      attestation?.payload.snapshot.resources ?? policy.snapshotResources;
+    if (
+      sandbox.snapshot !== policy.snapshot ||
+      sandbox.user !== "daytona" ||
+      (policy.target !== undefined && sandbox.target !== policy.target) ||
+      sandbox.cpu !== expectedResources.cpu ||
+      sandbox.memory !== expectedResources.memoryGiB ||
+      sandbox.disk !== expectedResources.diskGiB ||
+      sandbox.linkedSandboxId != null ||
+      sandbox.labels["buildlabs.owner"] !== "buildlabs-controller" ||
+      sandbox.labels["buildlabs.managed"] !== "true" ||
+      sandbox.labels["buildlabs.role"] !== policy.role
+    ) {
+      throw new Error(
+        "Daytona sandbox acquisition did not match its role policy",
+      );
+    }
+    const unused = await withAbort(
+      sandbox.process.executeCommand(
+        [
+          "set -euo pipefail",
+          "marker=/tmp/.buildlabs-controller-claimed",
+          'test ! -e "$marker"',
+          "umask 077",
+          "printf '%s\\n' claimed > \"$marker\"",
+        ].join("\n"),
+        undefined,
+        {},
+        15,
+      ),
+      signal,
+    );
+    if (unused.exitCode !== 0) {
+      throw new Error(
+        "Daytona sandbox was not unused at controller acquisition",
+      );
+    }
+  }
+
+  async #assertRuntimeAttestation(
+    sandbox: Sandbox,
+    attestation: DaytonaSnapshotAttestation | undefined,
+    policy: DaytonaRoleAcquisitionPolicy,
+    workDir: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (!attestation) {
+      return;
+    }
+    const snapshot = await withAbort(
+      this.#client.snapshot.get(policy.snapshot),
+      signal,
+    );
+    assertSnapshotApiMatchesAttestation(snapshot, attestation);
+    const versions = await withAbort(
+      sandbox.process.executeCommand(
+        [
+          "set -euo pipefail",
+          "printf 'chromium='",
+          "chromium --version",
+          "printf 'docker='",
+          "docker version --format '{{.Server.Version}}'",
+        ].join("\n"),
+        workDir,
+        {},
+        30,
+      ),
+      signal,
+    );
+    if (versions.exitCode !== 0) {
+      throw new Error(
+        "Daytona sandbox runtime could not be matched to its attestation",
+      );
+    }
+    const parsed = parseDaytonaRuntimeVersions(versions.result ?? "");
+    assertDaytonaSnapshotRuntime(
+      attestation,
       {
-        language: assignment.sandbox.language,
-        ...(snapshot ? { snapshot } : {}),
-        envVars: {
-          BUILDLABS_RUN_ID: runId,
-          BUILDLABS_SANDBOX_ROLE: role,
-          CI: "true",
-          DAYTONA_SANDBOX_OTEL_EXTRA_LABELS: daytonaTelemetryLabels(
-            runId,
-            assignment,
-            role,
-          ),
+        snapshotId: snapshot.id,
+        snapshotName: sandbox.snapshot ?? "",
+        target: sandbox.target,
+        resources: {
+          cpu: sandbox.cpu,
+          memoryGiB: sandbox.memory,
+          diskGiB: sandbox.disk,
         },
-        labels: {
-          "buildlabs.run-id": runId,
-          "buildlabs.project-id": assignment.projectId,
-          "buildlabs.candidate-id": assignment.candidateId,
-          "buildlabs.role": role,
-        },
-        public: false,
-        autoStopInterval: assignment.sandbox.autoStopMinutes,
-        autoArchiveInterval: assignment.sandbox.autoArchiveMinutes,
-        ttlMinutes: Math.max(
-          assignment.sandbox.autoArchiveMinutes,
-          Math.ceil(assignment.limits.wallClockSeconds / 60) + 30,
+        chromiumVersion: parsed.chromiumVersion,
+        dockerServerVersion: parsed.dockerServerVersion,
+      },
+      policy.snapshot,
+      policy.target,
+    );
+  }
+
+  #measurementContext(
+    timer: DaytonaAcquisitionTimer,
+  ): DaytonaSessionMeasurementContext {
+    return {
+      timer,
+      record: (measurement) => {
+        this.#recordMeasurement(measurement);
+      },
+    };
+  }
+
+  #recordMeasurement(measurement: DaytonaAcquisitionMeasurement): void {
+    this.#measurements.push(structuredClone(measurement));
+    if (this.#measurements.length > 1_000) {
+      this.#measurements.splice(0, this.#measurements.length - 1_000);
+    }
+    this.#emitTelemetry({
+      schema: "buildlabs.daytona.telemetry.v1",
+      emittedAt: measurement.measuredAt,
+      event: "acquisition",
+      labels: measurement.labels,
+      outcome:
+        measurement.outcome === "passed"
+          ? "passed"
+          : measurement.outcome === "cancelled"
+            ? "cancelled"
+            : "failed",
+      ...(measurement.failureCode
+        ? { failureCode: measurement.failureCode }
+        : {}),
+      values: {
+        warm_claim: measurement.warmClaim,
+        duration_ms: Object.values(measurement.phasesMs).reduce(
+          (total, duration) => total + (duration ?? 0),
+          0,
         ),
       },
-      { timeout: 120 },
-    );
-    if (signal?.aborted) {
-      await sandbox.delete(120, true).catch(() => undefined);
-      throwIfAborted(signal);
+    });
+    for (const [phase, durationMs] of Object.entries(measurement.phasesMs)) {
+      if (durationMs === undefined) {
+        continue;
+      }
+      this.#emitTelemetry({
+        schema: "buildlabs.daytona.telemetry.v1",
+        emittedAt: measurement.measuredAt,
+        event: phase === "browser_proof" ? "proof" : "lifecycle",
+        labels: measurement.labels,
+        outcome:
+          measurement.outcome === "passed"
+            ? "passed"
+            : measurement.outcome === "cancelled"
+              ? "cancelled"
+              : "failed",
+        phase: phase as keyof DaytonaAcquisitionMeasurement["phasesMs"],
+        durationMs,
+        ...(measurement.failureCode
+          ? { failureCode: measurement.failureCode }
+          : {}),
+      });
     }
-    return sandbox;
+    if (measurement.resourceMetrics?.latest) {
+      const latest = measurement.resourceMetrics.latest;
+      this.#emitTelemetry({
+        schema: "buildlabs.daytona.telemetry.v1",
+        emittedAt: measurement.measuredAt,
+        event: "metrics",
+        labels: measurement.labels,
+        outcome: "observed",
+        values: {
+          cpu_count: latest.cpuCount,
+          cpu_used_pct: latest.cpuUsedPct,
+          disk_total_bytes: latest.diskTotalBytes,
+          disk_used_bytes: latest.diskUsedBytes,
+          memory_total_bytes: latest.memoryTotalBytes,
+          memory_used_bytes: latest.memoryUsedBytes,
+          memory_cache_bytes: latest.memoryCacheBytes,
+        },
+      });
+    }
+    if (measurement.resourceMetrics?.collectionFailureCode) {
+      this.#emitTelemetry({
+        schema: "buildlabs.daytona.telemetry.v1",
+        emittedAt: measurement.measuredAt,
+        event: "metrics",
+        labels: measurement.labels,
+        outcome: "failed",
+        failureCode: measurement.resourceMetrics.collectionFailureCode,
+      });
+    }
   }
+
+  #emitTelemetry(event: Parameters<DaytonaInMemoryTelemetry["emit"]>[0]): void {
+    this.#telemetry.emit(event);
+    this.#persistentTelemetry?.emit(event);
+  }
+}
+
+function contentFreeLabels(
+  runId: string,
+  assignment: Pick<BuildAssignment, "projectId" | "candidateId">,
+  role: DaytonaSandboxRole,
+): DaytonaContentFreeLabels {
+  daytonaTelemetryLabels(runId, assignment, role);
+  return {
+    runId,
+    projectId: assignment.projectId,
+    candidateId: assignment.candidateId,
+    role,
+  };
+}
+
+function assertSnapshotApiMatchesAttestation(
+  snapshot: Awaited<ReturnType<DaytonaClientPort["snapshot"]["get"]>>,
+  attestation: DaytonaSnapshotAttestation,
+): void {
+  const expected = attestation.payload.snapshot;
+  const buildInfo = snapshot.buildInfo;
+  if (
+    snapshot.id !== expected.id ||
+    snapshot.name !== expected.name ||
+    snapshot.state !== "active" ||
+    snapshot.cpu !== expected.resources.cpu ||
+    snapshot.mem !== expected.resources.memoryGiB ||
+    snapshot.disk !== expected.resources.diskGiB ||
+    (snapshot.imageName || undefined) !== expected.imageName ||
+    (snapshot.ref || undefined) !== expected.ref ||
+    (snapshot.sandboxClass || undefined) !== expected.sandboxClass ||
+    digestJson([...(snapshot.regionIds ?? [])].sort()) !==
+      digestJson(expected.regionIds) ||
+    new Date(snapshot.createdAt).toISOString() !== expected.createdAt ||
+    !buildInfo?.snapshotRef ||
+    buildInfo.snapshotRef !== expected.buildInfo.snapshotRef ||
+    !buildInfo.dockerfileContent ||
+    sha256(buildInfo.dockerfileContent) !==
+      expected.buildInfo.dockerfileSha256 ||
+    digestJson([...(buildInfo.contextHashes ?? [])].sort()) !==
+      expected.buildInfo.contextHashesSha256
+  ) {
+    throw new Error(
+      "Daytona snapshot API identity drifted from its attestation",
+    );
+  }
+}
+
+function parseDaytonaRuntimeVersions(output: string): {
+  chromiumVersion: string;
+  dockerServerVersion: string;
+} {
+  const lines = output.trim().split("\n");
+  const chromiumVersion = lines
+    .find((line) => line.startsWith("chromium="))
+    ?.slice("chromium=".length)
+    .trim();
+  const dockerServerVersion = lines
+    .find((line) => line.startsWith("docker="))
+    ?.slice("docker=".length)
+    .trim();
+  if (!chromiumVersion || !dockerServerVersion) {
+    throw new Error("Daytona runtime version response was malformed");
+  }
+  return { chromiumVersion, dockerServerVersion };
 }
 
 export function daytonaTelemetryLabels(
@@ -3264,7 +4190,110 @@ function daytonaTelemetryLabelValue(value: string): string {
 }
 
 class FrozenPreviewIdentityError extends Error {
-  override readonly name = "FrozenPreviewIdentityError";
+  override readonly name = "DaytonaAttestationError";
+}
+
+async function assertFrozenSnapshotIdentity(
+  sandbox: Sandbox,
+  request: FrozenPreviewMaterializationRequest,
+  signal?: AbortSignal,
+): Promise<{
+  imageArchiveSha256: string;
+  imageId: string;
+}> {
+  const response = await withAbort(
+    sandbox.process.executeCommand(
+      `cat -- ${shellQuote(PROVEN_SNAPSHOT_IDENTITY_PATH)}`,
+      undefined,
+      {},
+      15,
+    ),
+    signal,
+  );
+  if (
+    response.exitCode !== 0 ||
+    !response.result ||
+    Buffer.byteLength(response.result, "utf8") > 4_096
+  ) {
+    throw new FrozenPreviewIdentityError(
+      "Frozen preview snapshot identity is unavailable",
+    );
+  }
+  let identity: unknown;
+  try {
+    identity = JSON.parse(response.result) as unknown;
+  } catch {
+    throw new FrozenPreviewIdentityError(
+      "Frozen preview snapshot identity is malformed",
+    );
+  }
+  if (
+    typeof identity !== "object" ||
+    identity === null ||
+    Array.isArray(identity) ||
+    (identity as Record<string, unknown>).schema !==
+      PROVEN_SNAPSHOT_IDENTITY_SCHEMA ||
+    (identity as Record<string, unknown>).snapshotName !== request.snapshotId ||
+    (identity as Record<string, unknown>).revisionHash !==
+      request.revisionHash ||
+    typeof (identity as Record<string, unknown>).imageId !== "string" ||
+    !/^sha256:[a-f0-9]{64}$/u.test(
+      (identity as Record<string, unknown>).imageId as string,
+    ) ||
+    typeof (identity as Record<string, unknown>).imageArchiveSha256 !==
+      "string" ||
+    !/^[a-f0-9]{64}$/u.test(
+      (identity as Record<string, unknown>).imageArchiveSha256 as string,
+    ) ||
+    Object.keys(identity).some(
+      (key) =>
+        key !== "schema" &&
+        key !== "snapshotName" &&
+        key !== "revisionHash" &&
+        key !== "imageId" &&
+        key !== "imageArchiveSha256",
+    )
+  ) {
+    throw new FrozenPreviewIdentityError(
+      "Frozen preview snapshot identity does not match the proven snapshot",
+    );
+  }
+  return {
+    imageArchiveSha256: (identity as Record<string, string>)
+      .imageArchiveSha256!,
+    imageId: (identity as Record<string, string>).imageId!,
+  };
+}
+
+async function restoreFrozenSnapshotImage(
+  sandbox: Sandbox,
+  workDir: string,
+  identity: {
+    imageArchiveSha256: string;
+    imageId: string;
+  },
+  signal?: AbortSignal,
+): Promise<void> {
+  const restore = await withAbort(
+    sandbox.process.executeCommand(
+      [
+        "set -euo pipefail",
+        `archive=${shellQuote(PROVEN_IMAGE_ARCHIVE_PATH)}`,
+        `printf '%s  %s\\n' ${shellQuote(identity.imageArchiveSha256)} "$archive" | sha256sum -c - >/dev/null`,
+        'docker load --input "$archive" >/dev/null',
+        `test "$(docker image inspect --format '{{.Id}}' ${shellQuote(PROVEN_CONTAINER_IMAGE_TAG)})" = ${shellQuote(identity.imageId)}`,
+      ].join("\n"),
+      workDir,
+      {},
+      300,
+    ),
+    signal,
+  );
+  if (restore.exitCode !== 0) {
+    throw new FrozenPreviewIdentityError(
+      "Frozen preview image archive failed attestation validation",
+    );
+  }
 }
 
 async function verifyFrozenPreviewReadiness(input: {
@@ -3372,6 +4401,10 @@ function validateFrozenPreviewMaterialization(
     !uuid.test(request.runId) ||
     !uuid.test(request.eventId) ||
     !uuid.test(request.artifactId) ||
+    (request.projectId !== undefined &&
+      !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(request.projectId)) ||
+    (request.candidateId !== undefined &&
+      !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(request.candidateId)) ||
     !sha256Pattern.test(request.artifactSha256) ||
     !sha256Pattern.test(request.revisionHash) ||
     !Number.isInteger(request.port) ||
@@ -3384,16 +4417,30 @@ function validateFrozenPreviewMaterialization(
   ) {
     throw new Error("Frozen preview materialization request is invalid");
   }
+  const expectedSnapshotName = `buildlabs-${request.runId.slice(0, 8)}-${request.revisionHash.slice(0, 12)}`;
+  if (request.snapshotId !== expectedSnapshotName) {
+    throw new Error(
+      "Frozen preview snapshot is not bound to its run and revision",
+    );
+  }
 }
 
 function frozenPreviewIdentityLabels(
   request: FrozenPreviewMaterializationRequest,
 ): Record<string, string> {
   return {
+    "buildlabs.owner": "buildlabs-controller",
+    "buildlabs.managed": "true",
+    "buildlabs.role": "frozen-preview",
     "buildlabs.purpose": "proven-preview",
     "buildlabs.run-id": request.runId,
+    ...(request.projectId ? { "buildlabs.project-id": request.projectId } : {}),
+    ...(request.candidateId
+      ? { "buildlabs.candidate-id": request.candidateId }
+      : {}),
     "buildlabs.event-id": request.eventId,
     "buildlabs.artifact-id": request.artifactId,
+    "buildlabs.artifact-sha256": request.artifactSha256.slice(0, 32),
     "buildlabs.revision": request.revisionHash.slice(0, 32),
   };
 }
@@ -3411,9 +4458,11 @@ function frozenPreviewEffectLabels(
       JSON.stringify({
         artifactId: request.artifactId,
         artifactSha256: request.artifactSha256,
+        candidateId: request.candidateId,
         eventId: request.eventId,
         expiresInSeconds: request.expiresInSeconds,
         port: request.port,
+        projectId: request.projectId,
         revisionHash: request.revisionHash,
         runId: request.runId,
         snapshotId: request.snapshotId,
@@ -3448,11 +4497,17 @@ async function findFrozenPreviewSandboxes(
 
 function assertFrozenPreviewSandbox(
   sandbox: Sandbox,
-  snapshotId: string,
+  policy: DaytonaRoleAcquisitionPolicy,
   identityLabels: Readonly<Record<string, string>>,
 ): void {
   if (
-    sandbox.snapshot !== snapshotId ||
+    sandbox.snapshot !== policy.snapshot ||
+    sandbox.user !== "daytona" ||
+    (policy.target !== undefined && sandbox.target !== policy.target) ||
+    sandbox.cpu !== policy.snapshotResources.cpu ||
+    sandbox.memory !== policy.snapshotResources.memoryGiB ||
+    sandbox.disk !== policy.snapshotResources.diskGiB ||
+    sandbox.linkedSandboxId != null ||
     sandbox.public ||
     Object.entries(identityLabels).some(
       ([key, value]) => sandbox.labels[key] !== value,
@@ -3471,12 +4526,15 @@ export class DaytonaSandboxSession implements SandboxSession {
   #workspaceCommitSha?: string;
   #controllerContentDigest?: string;
   #proofNetworkSealed = false;
+  #measurementFinished = false;
+  readonly #asyncExecutionReceipts: DaytonaAsyncExecutionReceipt[] = [];
 
   constructor(
     private readonly sandbox: Sandbox,
     workDir: string,
     private readonly maxCommandEnvelopeBytes: number,
     private readonly role: DaytonaSandboxRole,
+    private readonly measurement?: DaytonaSessionMeasurementContext,
   ) {
     this.id = sandbox.id;
     this.workDir = workDir;
@@ -3506,6 +4564,25 @@ export class DaytonaSandboxSession implements SandboxSession {
     timeoutSeconds: number,
     signal?: AbortSignal,
   ): Promise<CommandResult> {
+    if (timeoutSeconds >= ASYNC_COMMAND_MIN_TIMEOUT_SECONDS) {
+      try {
+        const execution = await executeBoundedSandboxCommandAsync(
+          this.sandbox,
+          command,
+          this.workDir,
+          timeoutSeconds,
+          this.maxCommandEnvelopeBytes,
+          signal,
+        );
+        this.#asyncExecutionReceipts.push(execution.receipt);
+        return execution.result;
+      } catch (error) {
+        if (error instanceof DaytonaAsyncCommandError) {
+          this.#asyncExecutionReceipts.push(error.receipt);
+        }
+        throw error;
+      }
+    }
     return executeBoundedSandboxCommand(
       this.sandbox.process,
       command,
@@ -3513,6 +4590,12 @@ export class DaytonaSandboxSession implements SandboxSession {
       timeoutSeconds,
       this.maxCommandEnvelopeBytes,
       signal,
+    );
+  }
+
+  asyncExecutionReceipts(): DaytonaAsyncExecutionReceipt[] {
+    return this.#asyncExecutionReceipts.map((receipt) =>
+      structuredClone(receipt),
     );
   }
 
@@ -3610,7 +4693,7 @@ export class DaytonaSandboxSession implements SandboxSession {
   }
 
   async sealNetworkForProof(signal?: AbortSignal): Promise<void> {
-    if (this.role !== "verifier-delivery") {
+    if (this.role !== "verifier-delivery" && this.role !== "frozen-preview") {
       throw new Error(
         "Network sealing is restricted to the Daytona delivery verifier",
       );
@@ -3625,6 +4708,12 @@ export class DaytonaSandboxSession implements SandboxSession {
       this.sandbox.updateNetworkSettings({ networkBlockAll: true }),
       signal,
     );
+    await withAbort(this.sandbox.refreshData(), signal);
+    if (this.sandbox.networkBlockAll !== true) {
+      throw new Error(
+        "Daytona delivery verifier did not retain networkBlockAll",
+      );
+    }
     throwIfAborted(signal);
     this.#proofNetworkSealed = true;
   }
@@ -3634,7 +4723,10 @@ export class DaytonaSandboxSession implements SandboxSession {
     port: number,
     signal?: AbortSignal,
   ): Promise<void> {
-    if (this.role !== "verifier-delivery" || !this.#proofNetworkSealed) {
+    if (
+      (this.role !== "verifier-delivery" && this.role !== "frozen-preview") ||
+      !this.#proofNetworkSealed
+    ) {
       throw new Error(
         "Container proof requires a network-sealed Daytona delivery verifier",
       );
@@ -3642,33 +4734,38 @@ export class DaytonaSandboxSession implements SandboxSession {
     if (!/^[a-z0-9][a-z0-9._/-]{0,127}$/i.test(imageTag)) {
       throw new Error("Container image tag is invalid");
     }
-    await deleteDaytonaSessionIfPresent(
-      this.sandbox.process,
-      "buildlabs-preview",
-      signal,
-    );
-    const command = deliveryContainerRunCommand(imageTag, port);
-    const result = await this.runCommand(command, 120, signal);
-    if (result.exitCode !== 0) {
-      throw new Error(
-        `Failed to start proven container preview: ${result.stderr || result.stdout}`,
+    this.measurement?.timer.start("docker");
+    try {
+      await deleteDaytonaSessionIfPresent(
+        this.sandbox.process,
+        "buildlabs-preview",
+        signal,
       );
-    }
-    const ready = await this.runCommand(
-      [
-        "for attempt in $(seq 1 90); do",
-        `  if curl --silent --show-error --output /dev/null --max-time 2 http://127.0.0.1:${port}/; then exit 0; fi`,
-        "  sleep 1",
-        "done",
-        "exit 1",
-      ].join("\n"),
-      100,
-      signal,
-    );
-    if (ready.exitCode !== 0) {
-      throw new Error(
-        `Proven container preview did not respond on port ${port} within 90 seconds`,
+      const command = deliveryContainerRunCommand(imageTag, port);
+      const result = await this.runCommand(command, 120, signal);
+      if (result.exitCode !== 0) {
+        throw new Error(
+          `Failed to start proven container preview: ${result.stderr || result.stdout}`,
+        );
+      }
+      const ready = await this.runCommand(
+        [
+          "for attempt in $(seq 1 90); do",
+          `  if curl --silent --show-error --output /dev/null --max-time 2 http://127.0.0.1:${port}/; then exit 0; fi`,
+          "  sleep 1",
+          "done",
+          "exit 1",
+        ].join("\n"),
+        100,
+        signal,
       );
+      if (ready.exitCode !== 0) {
+        throw new Error(
+          `Proven container preview did not respond on port ${port} within 90 seconds`,
+        );
+      }
+    } finally {
+      this.measurement?.timer.end("docker");
     }
   }
 
@@ -3688,14 +4785,19 @@ export class DaytonaSandboxSession implements SandboxSession {
         "Rendered-page proof requires a network-sealed Daytona delivery verifier",
       );
     }
-    return inspectRenderedPagesInDaytonaSandbox(
-      this.sandbox,
-      this.workDir,
-      paths,
-      port,
-      timeoutMilliseconds,
-      signal,
-    );
+    this.measurement?.timer.start("browser_proof");
+    try {
+      return await inspectRenderedPagesInDaytonaSandbox(
+        this.sandbox,
+        this.workDir,
+        paths,
+        port,
+        timeoutMilliseconds,
+        signal,
+      );
+    } finally {
+      this.measurement?.timer.end("browser_proof");
+    }
   }
 
   async freeze(): Promise<FrozenRevision> {
@@ -3811,13 +4913,92 @@ export class DaytonaSandboxSession implements SandboxSession {
       throw new Error("Daytona snapshot name is invalid");
     }
     throwIfAborted(signal);
-    await this.sandbox.stop(120);
+    const revisionHash =
+      this.#controllerContentDigest ?? this.#lastFrozen?.sourceDigest;
+    if (!revisionHash || !/^[a-f0-9]{64}$/u.test(revisionHash)) {
+      throw new Error(
+        "Snapshot promotion requires a controller-attested revision",
+      );
+    }
+    const imageArchive = await withAbort(
+      this.sandbox.process.executeCommand(
+        [
+          "set -euo pipefail",
+          `controller_dir=${shellQuote(posix.dirname(PROVEN_IMAGE_ARCHIVE_PATH))}`,
+          `archive=${shellQuote(PROVEN_IMAGE_ARCHIVE_PATH)}`,
+          'tmp="${archive}.tmp"',
+          "trap 'rm -f \"$tmp\"' EXIT",
+          'install -d -m 700 "$controller_dir"',
+          `image_id="$(docker image inspect --format '{{.Id}}' ${shellQuote(PROVEN_CONTAINER_IMAGE_TAG)})"`,
+          `docker image save --output "$tmp" ${shellQuote(PROVEN_CONTAINER_IMAGE_TAG)}`,
+          'archive_sha256="$(sha256sum "$tmp" | awk \'{print $1}\')"',
+          'chmod 400 "$tmp"',
+          'mv -f "$tmp" "$archive"',
+          "trap - EXIT",
+          'printf "%s\\n%s\\n" "$image_id" "$archive_sha256"',
+        ].join("\n"),
+        this.workDir,
+        {},
+        300,
+      ),
+      signal,
+    );
+    const [imageId, imageArchiveSha256, ...unexpectedImageOutput] = (
+      imageArchive.result ?? ""
+    )
+      .trim()
+      .split(/\s+/u);
+    if (
+      imageArchive.exitCode !== 0 ||
+      !imageId ||
+      !/^sha256:[a-f0-9]{64}$/u.test(imageId) ||
+      !imageArchiveSha256 ||
+      !/^[a-f0-9]{64}$/u.test(imageArchiveSha256) ||
+      unexpectedImageOutput.length > 0
+    ) {
+      throw new Error(
+        "Could not archive the proven Daytona image for frozen delivery",
+      );
+    }
+    const identity = Buffer.from(
+      JSON.stringify({
+        schema: PROVEN_SNAPSHOT_IDENTITY_SCHEMA,
+        snapshotName: name,
+        revisionHash,
+        imageId,
+        imageArchiveSha256,
+      }),
+      "utf8",
+    ).toString("base64");
+    const identityWrite = await withAbort(
+      this.sandbox.process.executeCommand(
+        [
+          "set -euo pipefail",
+          `install -d -m 700 ${shellQuote(posix.dirname(PROVEN_SNAPSHOT_IDENTITY_PATH))}`,
+          `printf '%s' ${shellQuote(identity)} | base64 -d > ${shellQuote(PROVEN_SNAPSHOT_IDENTITY_PATH)}`,
+          `chmod 400 ${shellQuote(PROVEN_SNAPSHOT_IDENTITY_PATH)}`,
+        ].join("\n"),
+        this.workDir,
+        {},
+        15,
+      ),
+      signal,
+    );
+    if (identityWrite.exitCode !== 0) {
+      throw new Error("Could not bind the promoted Daytona snapshot identity");
+    }
+    this.measurement?.timer.start("snapshot_restart");
     try {
-      await this.sandbox._experimental_createSnapshot(name, 300);
+      await this.sandbox.stop(120);
+      try {
+        await this.sandbox._experimental_createSnapshot(name, 300);
+      } finally {
+        await this.sandbox.start(120);
+        await this.#applyProofNetworkSeal(signal);
+        await ensureDockerRuntime(this.sandbox, this.workDir, signal);
+      }
     } finally {
-      await this.sandbox.start(120);
-      await this.#applyProofNetworkSeal(signal);
-      await ensureDockerRuntime(this.sandbox, this.workDir, signal);
+      this.measurement?.timer.end("snapshot_restart");
     }
     throwIfAborted(signal);
     return name;
@@ -3966,9 +5147,49 @@ export class DaytonaSandboxSession implements SandboxSession {
   }
 
   async dispose(signal?: AbortSignal): Promise<void> {
-    throwIfAborted(signal);
-    await this.sandbox.delete(120, true);
-    throwIfAborted(signal);
+    if (this.#measurementFinished) {
+      throwIfAborted(signal);
+      await this.sandbox.delete(120, true);
+      throwIfAborted(signal);
+      return;
+    }
+    this.measurement?.timer.start("teardown");
+    let resourceMetrics:
+      Awaited<ReturnType<typeof collectDaytonaResourceMetrics>> | undefined;
+    try {
+      throwIfAborted(signal);
+      try {
+        resourceMetrics = await collectDaytonaResourceMetrics(this.sandbox, {
+          includeHistorical: false,
+        });
+      } catch (metricsError) {
+        resourceMetrics = {
+          collectionFailureCode: classifyDaytonaFailure(metricsError),
+        };
+      }
+      await this.sandbox.delete(120, true);
+      throwIfAborted(signal);
+      this.measurement?.timer.end("teardown");
+      this.#measurementFinished = true;
+      this.measurement?.record(
+        this.measurement.timer.complete("passed", {
+          ...(resourceMetrics ? { resourceMetrics } : {}),
+        }),
+      );
+    } catch (error) {
+      this.measurement?.timer.end("teardown");
+      this.#measurementFinished = true;
+      this.measurement?.record(
+        this.measurement.timer.complete(
+          signal?.aborted ? "cancelled" : "failed",
+          {
+            failure: error,
+            ...(resourceMetrics ? { resourceMetrics } : {}),
+          },
+        ),
+      );
+      throw error;
+    }
   }
 }
 
@@ -4276,62 +5497,11 @@ export async function executeBoundedSandboxCommand(
   maximumEnvelopeBytes = MAX_COMMAND_ENVELOPE_BYTES,
 ): Promise<CommandResult> {
   throwIfAborted(signal);
-  if (
-    !Number.isSafeInteger(requestedEnvelopeBytes) ||
-    requestedEnvelopeBytes < 1_024 ||
-    !Number.isSafeInteger(maximumEnvelopeBytes) ||
-    maximumEnvelopeBytes < 1_024
-  ) {
-    throw new Error("Daytona command output limit is invalid");
-  }
-  const envelopeBytes = Math.min(requestedEnvelopeBytes, maximumEnvelopeBytes);
-  const rawOutputBudget =
-    Math.floor(((envelopeBytes - COMMAND_ENVELOPE_OVERHEAD_BYTES) * 3) / 4) - 8;
-  if (rawOutputBudget < 1) {
-    throw new Error("Daytona command output limit is too small");
-  }
-  const encodedCommand = Buffer.from(command, "utf8").toString("base64");
-  const wrapper = [
-    "set +e",
-    "umask 077",
-    'capture_dir=$(mktemp -d "${TMPDIR:-/tmp}/buildlabs-command.XXXXXX") || exit 125',
-    'cleanup() { rm -rf -- "$capture_dir"; }',
-    "trap cleanup EXIT",
-    'stdout_file="$capture_dir/stdout"',
-    'stderr_file="$capture_dir/stderr"',
-    'command_file="$capture_dir/command.sh"',
-    `printf '%s' ${shellQuote(encodedCommand)} | base64 -d > "$command_file" || exit 125`,
-    'chmod 700 "$command_file" || exit 125',
-    ': > "$stdout_file"',
-    ': > "$stderr_file"',
-    'bash "$command_file" > "$stdout_file" 2> "$stderr_file"',
-    "command_exit=$?",
-    'stdout_size=$(wc -c < "$stdout_file" | tr -d "[:space:]")',
-    'stderr_size=$(wc -c < "$stderr_file" | tr -d "[:space:]")',
-    `raw_budget=${rawOutputBudget}`,
-    "half_budget=$((raw_budget / 2))",
-    "stdout_take=$half_budget",
-    'if [ "$stdout_size" -lt "$stdout_take" ]; then stdout_take=$stdout_size; fi',
-    "remaining=$((raw_budget - stdout_take))",
-    "stderr_take=$remaining",
-    'if [ "$stderr_size" -lt "$stderr_take" ]; then stderr_take=$stderr_size; fi',
-    "remaining=$((raw_budget - stdout_take - stderr_take))",
-    'if [ "$remaining" -gt 0 ] && [ "$stdout_size" -gt "$stdout_take" ]; then',
-    "  stdout_extra=$((stdout_size - stdout_take))",
-    '  if [ "$stdout_extra" -gt "$remaining" ]; then stdout_extra=$remaining; fi',
-    "  stdout_take=$((stdout_take + stdout_extra))",
-    "fi",
-    `printf '%s\\n' ${shellQuote(COMMAND_ENVELOPE_MAGIC)} "$command_exit" "$stdout_size" "$stderr_size" "$stdout_take" "$stderr_take"`,
-    'if [ "$stdout_take" -gt 0 ]; then',
-    '  head -c "$stdout_take" "$stdout_file" | base64 | tr -d "\\n"',
-    "fi",
-    "printf '\\n'",
-    'if [ "$stderr_take" -gt 0 ]; then',
-    '  head -c "$stderr_take" "$stderr_file" | base64 | tr -d "\\n"',
-    "fi",
-    "printf '\\n'",
-    "exit 0",
-  ].join("\n");
+  const { envelopeBytes, rawOutputBudget, wrapper } = boundedCommandEnvelope(
+    command,
+    requestedEnvelopeBytes,
+    maximumEnvelopeBytes,
+  );
 
   const started = performance.now();
   const response = await withAbort(
@@ -4347,6 +5517,150 @@ export async function executeBoundedSandboxCommand(
     throw new Error("Daytona command output envelope exceeded its hard limit");
   }
   return parseCommandEnvelope(envelope, rawOutputBudget, durationMs);
+}
+
+export class DaytonaAsyncCommandError extends Error {
+  override readonly name = "DaytonaAsyncCommandError";
+
+  constructor(
+    message: string,
+    readonly receipt: DaytonaAsyncExecutionReceipt,
+  ) {
+    super(message);
+  }
+}
+
+export async function executeBoundedSandboxCommandAsync(
+  sandbox: Pick<Sandbox, "delete" | "id" | "process">,
+  command: string,
+  workDir: string,
+  timeoutSeconds: number,
+  requestedEnvelopeBytes: number,
+  signal?: AbortSignal,
+  maximumEnvelopeBytes = MAX_COMMAND_ENVELOPE_BYTES,
+): Promise<{
+  result: CommandResult;
+  receipt: DaytonaAsyncExecutionReceipt;
+}> {
+  throwIfAborted(signal);
+  const { envelopeBytes, rawOutputBudget, wrapper } = boundedCommandEnvelope(
+    command,
+    requestedEnvelopeBytes,
+    maximumEnvelopeBytes,
+  );
+  let stdout = "";
+  let stderr = "";
+  const providerReceipt = await executeDaytonaAsyncCommand({
+    process: sandbox.process,
+    command: ["set -e", `cd -- ${shellQuote(workDir)}`, wrapper].join("\n"),
+    timeoutMilliseconds: timeoutSeconds * 1_000,
+    terminateSandbox: async (reason) => {
+      await cleanupFailedDaytonaSandbox(
+        sandbox,
+        new Error(`Daytona async command ${reason}`),
+      );
+    },
+    ...(signal ? { signal } : {}),
+    onOutput: (output) => {
+      stdout = output.stdout;
+      stderr = output.stderr;
+    },
+  });
+  const receipt: DaytonaAsyncExecutionReceipt = {
+    ...providerReceipt,
+    commandSha256: sha256(command),
+  };
+  if (
+    receipt.outcome !== "completed" ||
+    receipt.exitCode !== 0 ||
+    receipt.sandboxTerminated
+  ) {
+    throw new DaytonaAsyncCommandError(
+      `Daytona async command did not complete (${receipt.outcome})`,
+      receipt,
+    );
+  }
+  if (stderr.length > 0 || Buffer.byteLength(stdout, "utf8") > envelopeBytes) {
+    throw new DaytonaAsyncCommandError(
+      "Daytona async command returned an invalid output envelope",
+      receipt,
+    );
+  }
+  return {
+    result: parseCommandEnvelope(stdout, rawOutputBudget, receipt.durationMs),
+    receipt,
+  };
+}
+
+function boundedCommandEnvelope(
+  command: string,
+  requestedEnvelopeBytes: number,
+  maximumEnvelopeBytes: number,
+): {
+  envelopeBytes: number;
+  rawOutputBudget: number;
+  wrapper: string;
+} {
+  if (
+    !Number.isSafeInteger(requestedEnvelopeBytes) ||
+    requestedEnvelopeBytes < 1_024 ||
+    !Number.isSafeInteger(maximumEnvelopeBytes) ||
+    maximumEnvelopeBytes < 1_024
+  ) {
+    throw new Error("Daytona command output limit is invalid");
+  }
+  const envelopeBytes = Math.min(requestedEnvelopeBytes, maximumEnvelopeBytes);
+  const rawOutputBudget =
+    Math.floor(((envelopeBytes - COMMAND_ENVELOPE_OVERHEAD_BYTES) * 3) / 4) - 8;
+  if (rawOutputBudget < 1) {
+    throw new Error("Daytona command output limit is too small");
+  }
+  const encodedCommand = Buffer.from(command, "utf8").toString("base64");
+  return {
+    envelopeBytes,
+    rawOutputBudget,
+    wrapper: [
+      "set +e",
+      "umask 077",
+      'capture_dir=$(mktemp -d "${TMPDIR:-/tmp}/buildlabs-command.XXXXXX") || exit 125',
+      'cleanup() { rm -rf -- "$capture_dir"; }',
+      "trap cleanup EXIT",
+      'stdout_file="$capture_dir/stdout"',
+      'stderr_file="$capture_dir/stderr"',
+      'command_file="$capture_dir/command.sh"',
+      `printf '%s' ${shellQuote(encodedCommand)} | base64 -d > "$command_file" || exit 125`,
+      'chmod 700 "$command_file" || exit 125',
+      ': > "$stdout_file"',
+      ': > "$stderr_file"',
+      'bash "$command_file" > "$stdout_file" 2> "$stderr_file"',
+      "command_exit=$?",
+      'stdout_size=$(wc -c < "$stdout_file" | tr -d "[:space:]")',
+      'stderr_size=$(wc -c < "$stderr_file" | tr -d "[:space:]")',
+      `raw_budget=${rawOutputBudget}`,
+      "half_budget=$((raw_budget / 2))",
+      "stdout_take=$half_budget",
+      'if [ "$stdout_size" -lt "$stdout_take" ]; then stdout_take=$stdout_size; fi',
+      "remaining=$((raw_budget - stdout_take))",
+      "stderr_take=$remaining",
+      'if [ "$stderr_size" -lt "$stderr_take" ]; then stderr_take=$stderr_size; fi',
+      "remaining=$((raw_budget - stdout_take - stderr_take))",
+      'if [ "$remaining" -gt 0 ] && [ "$stdout_size" -gt "$stdout_take" ]; then',
+      "  stdout_extra=$((stdout_size - stdout_take))",
+      '  if [ "$stdout_extra" -gt "$remaining" ]; then stdout_extra=$remaining; fi',
+      "  stdout_take=$((stdout_take + stdout_extra))",
+      "fi",
+      `printf '%s\\n' ${shellQuote(COMMAND_ENVELOPE_MAGIC)} "$command_exit" "$stdout_size" "$stderr_size" "$stdout_take" "$stderr_take"`,
+      'if [ "$stdout_take" -gt 0 ]; then',
+      '  head -c "$stdout_take" "$stdout_file" | base64 | tr -d "\\n"',
+      "fi",
+      "printf '\\n'",
+      'if [ "$stderr_take" -gt 0 ]; then',
+      '  head -c "$stderr_take" "$stderr_file" | base64 | tr -d "\\n"',
+      "fi",
+      "printf '\\n'",
+      "exit 0",
+    ].join("\n"),
+  };
 }
 
 function parseCommandEnvelope(
@@ -4817,6 +6131,10 @@ export async function initializeDaytonaSandboxWithDockerRetry<T>(
   initialize: (sandbox: Sandbox) => Promise<T>,
   signal?: AbortSignal,
   maxAttempts = MAX_DOCKER_SANDBOX_INITIALIZATION_ATTEMPTS,
+  retryMeasurement?: {
+    start(): void;
+    end(): void;
+  },
 ): Promise<T> {
   const attempts = normalizePositiveInteger(
     maxAttempts,
@@ -4829,7 +6147,18 @@ export async function initializeDaytonaSandboxWithDockerRetry<T>(
     try {
       return await initialize(sandbox);
     } catch (error) {
-      await cleanupFailedDaytonaSandbox(sandbox, error);
+      const willRetry =
+        error instanceof DaytonaDockerRuntimeError && attempt < attempts;
+      if (willRetry) {
+        retryMeasurement?.start();
+      }
+      try {
+        await cleanupFailedDaytonaSandbox(sandbox, error);
+      } finally {
+        if (willRetry) {
+          retryMeasurement?.end();
+        }
+      }
       throwIfAborted(signal);
       lastError = error;
       if (

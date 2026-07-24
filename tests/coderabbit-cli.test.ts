@@ -12,9 +12,29 @@ import {
   runStreamingCommand,
   validateReviewFindingPaths,
 } from "../src/adapters/coderabbit/coderabbit-cli.js";
+import {
+  CODERABBIT_CONTROLLER_CONFIG_DIGEST,
+  CODERABBIT_CONTROLLER_RULES_DIGEST,
+  CODERABBIT_EVENT_SCHEMA_DIGEST,
+  CODERABBIT_POLICY_PACK_DIGEST,
+  CODERABBIT_POLICY_PACK_VERSION,
+  CODERABBIT_TOOL_POLICY_DIGEST,
+} from "../src/adapters/coderabbit/policy-pack.js";
+import {
+  CodeRabbitProtocolError,
+  type ExpectedCodeRabbitReviewContext,
+} from "../src/adapters/coderabbit/protocol.js";
 import { assignment } from "./fixtures.js";
 
 const temporaryDirectories: string[] = [];
+const expectedContext: ExpectedCodeRabbitReviewContext = {
+  reviewKind: "authoritative_full",
+  reviewType: "committed",
+  currentBranch: "buildlabs-candidate",
+  baseCommit: "a".repeat(40),
+  workingDirectory: "/controller/review",
+  expectedFiles: ["src/index.ts"],
+};
 
 afterEach(async () => {
   vi.useRealTimers();
@@ -26,24 +46,35 @@ afterEach(async () => {
 });
 
 describe("CodeRabbit agent output", () => {
-  it("accepts a documented successful completion and preserves findings", () => {
+  it("accepts the documented v0.7 context and terminal while preserving findings", () => {
     const result = parseCodeRabbitEvents(
-      [
-        JSON.stringify({ type: "review_context", files: 1 }),
-        JSON.stringify({ type: "heartbeat" }),
-        JSON.stringify({
+      jsonl([
+        reviewContext(),
+        { type: "status", phase: "analyzing", status: "reviewing" },
+        { type: "heartbeat", status: "reviewing" },
+        {
           type: "finding",
           severity: "critical",
           fileName: "src/index.ts",
           codegenInstructions: "Validate the input.",
           suggestions: ["Add schema validation"],
-        }),
-        JSON.stringify({ type: "complete", status: "review_completed" }),
-      ].join("\n"),
+        },
+        complete(1),
+      ]),
+      expectedContext,
     );
 
     expect(result).toMatchObject({
       complete: true,
+      terminalState: "review_completed",
+      eventCounts: {
+        reviewContext: 1,
+        status: 1,
+        heartbeat: 1,
+        finding: 1,
+        complete: 1,
+        error: 0,
+      },
       findings: [
         {
           severity: "critical",
@@ -59,32 +90,56 @@ describe("CodeRabbit agent output", () => {
     "fails closed for completion status %s",
     (status) => {
       expect(() =>
-        parseCodeRabbitEvents(JSON.stringify({ type: "complete", status })),
-      ).toThrow("non-success completion status");
+        parseCodeRabbitEvents(
+          jsonl([
+            reviewContext(),
+            {
+              type: "complete",
+              status,
+              findings: 0,
+              reviewedFiles: [...expectedContext.expectedFiles],
+            },
+          ]),
+          expectedContext,
+        ),
+      ).toThrow("invalid completion");
     },
   );
 
-  it("fails closed for error events, malformed-only output, or no completion", () => {
+  it("fails closed for permanent errors, malformed output, or no completion", () => {
     expect(() =>
       parseCodeRabbitEvents(
-        [
-          JSON.stringify({ type: "error", message: "review failed" }),
-          JSON.stringify({ type: "complete", status: "review_completed" }),
-        ].join("\n"),
+        jsonl([
+          reviewContext(),
+          {
+            type: "error",
+            errorType: "review",
+            message: "Review configuration failed.",
+            recoverable: false,
+            retryable: false,
+          },
+        ]),
+        expectedContext,
       ),
-    ).toThrow("review failed");
-    expect(() => parseCodeRabbitEvents("not-json\n")).toThrow(
-      "malformed JSONL",
-    );
+    ).toThrow("review error event");
     expect(() =>
-      parseCodeRabbitEvents(JSON.stringify({ type: "heartbeat" })),
+      parseCodeRabbitEvents(
+        `${JSON.stringify(reviewContext())}\nnot-json`,
+        expectedContext,
+      ),
+    ).toThrow("malformed JSONL");
+    expect(() =>
+      parseCodeRabbitEvents(
+        jsonl([reviewContext(), { type: "heartbeat", status: "reviewing" }]),
+        expectedContext,
+      ),
     ).toThrow("did not emit a completion event");
     expect(() =>
       parseCodeRabbitEvents(
-        [
-          "not-json",
-          JSON.stringify({ type: "complete", status: "review_completed" }),
-        ].join("\n"),
+        `${JSON.stringify(reviewContext())}\nnot-json\n${JSON.stringify(
+          complete(),
+        )}`,
+        expectedContext,
       ),
     ).toThrow("malformed JSONL");
   });
@@ -92,99 +147,85 @@ describe("CodeRabbit agent output", () => {
   it("treats an explicit skipped status as an error", () => {
     expect(() =>
       parseCodeRabbitEvents(
-        [
-          JSON.stringify({ type: "status", status: "review_skipped" }),
-          JSON.stringify({ type: "complete", status: "review_skipped" }),
-        ].join("\n"),
+        jsonl([
+          reviewContext(),
+          { type: "status", phase: "analyzing", status: "review_skipped" },
+          complete(),
+        ]),
+        expectedContext,
       ),
     ).toThrow("CodeRabbit skipped the review");
   });
 
-  it("bounds finding paths, text, suggestions, count, and completion events", () => {
-    const complete = JSON.stringify({
-      type: "complete",
-      status: "review_completed",
-    });
+  it("binds the exact review context and file coverage", () => {
+    const mismatchedContext = {
+      ...reviewContext(),
+      baseCommit: "b".repeat(40),
+    };
     expect(() =>
       parseCodeRabbitEvents(
-        [
-          JSON.stringify({
-            type: "finding",
-            severity: "major",
-            fileName: "../outside.ts",
-            comment: "unsafe path",
-          }),
-          complete,
-        ].join("\n"),
+        jsonl([mismatchedContext, complete()]),
+        expectedContext,
       ),
-    ).toThrow("invalid finding");
-    expect(() =>
-      parseCodeRabbitEvents(
-        [
-          JSON.stringify({
-            type: "finding",
-            severity: "major",
-            fileName: "src/index.ts",
-            comment: "x".repeat(20_001),
-          }),
-          complete,
-        ].join("\n"),
-      ),
-    ).toThrow("invalid finding");
-    expect(() =>
-      parseCodeRabbitEvents(
-        [
-          JSON.stringify({
-            type: "finding",
-            severity: "major",
-            fileName: "src/index.ts",
-            comment: "bounded",
-            suggestions: Array.from({ length: 21 }, () => "fix"),
-          }),
-          complete,
-        ].join("\n"),
-      ),
-    ).toThrow("invalid finding");
+    ).toThrow("review context did not match controller scope");
 
-    const tooMany = Array.from({ length: 501 }, (_, index) =>
-      JSON.stringify({
-        type: "finding",
-        severity: "minor",
-        fileName: `src/file-${index}.ts`,
-        comment: "bounded",
-      }),
-    );
+    const twoFileScope = {
+      ...expectedContext,
+      expectedFiles: ["Dockerfile", "src/index.ts"],
+    };
     expect(() =>
-      parseCodeRabbitEvents([...tooMany, complete].join("\n")),
-    ).toThrow("more than 500 findings");
-    expect(() =>
-      parseCodeRabbitEvents([complete, complete].join("\n")),
-    ).toThrow("multiple completion events");
+      parseCodeRabbitEvents(jsonl([reviewContext(), complete()]), twoFileScope),
+    ).toThrow("reviewed file coverage was partial or mismatched");
   });
 
-  it("keeps bounded structured diagnostics without trusting scope commands", () => {
+  it("rejects duplicate or post-terminal data", () => {
     expect(() =>
       parseCodeRabbitEvents(
-        JSON.stringify({
-          type: "error",
-          message: "Review scope is too large",
-          candidatesNote: "Choose a narrower scope",
-          candidates: [
-            {
-              command: "coderabbit review --dir src",
-              estimatedFiles: 50,
-            },
-          ],
-        }),
+        jsonl([reviewContext(), complete(), complete()]),
+        expectedContext,
+      ),
+    ).toThrow("data after its terminal event");
+    expect(() =>
+      parseCodeRabbitEvents(
+        jsonl([
+          reviewContext(),
+          complete(),
+          { type: "heartbeat", status: "reviewing" },
+        ]),
+        expectedContext,
+      ),
+    ).toThrow("data after its terminal event");
+  });
+
+  it("rejects structured narrower-scope candidates without executing them", () => {
+    expect(() =>
+      parseCodeRabbitEvents(
+        jsonl([
+          reviewContext(),
+          {
+            type: "error",
+            errorType: "review",
+            message: "The requested review is too large.",
+            recoverable: false,
+            candidatesNote: "Choose a narrower scope",
+            candidates: [
+              {
+                command: "coderabbit review --dir src",
+                estimatedFiles: 50,
+              },
+            ],
+          },
+        ]),
+        expectedContext,
       ),
     ).toThrow(
-      "Review scope is too large. Choose a narrower scope. 1 narrower scope candidate(s) were reported",
+      "rejected the authoritative scope and proposed narrower alternatives",
     );
   });
 });
 
 describe("CodeRabbit transient review retries", () => {
-  it("backs off after a transient failure and succeeds on the next attempt", async () => {
+  it("backs off after a typed transient failure and succeeds on the next attempt", async () => {
     vi.useFakeTimers();
     let attempts = 0;
     const review = runCodeRabbitReviewWithRetry(
@@ -192,8 +233,9 @@ describe("CodeRabbit transient review retries", () => {
         attempts += 1;
         if (attempts === 1) {
           return Promise.reject(
-            new Error(
-              "Rate limit exceeded\nCodeRabbit did not emit a completion event",
+            new CodeRabbitProtocolError(
+              "CodeRabbit emitted a rate_limit error event",
+              "structured_rate_limit",
             ),
           );
         }
@@ -211,34 +253,38 @@ describe("CodeRabbit transient review retries", () => {
     expect(attempts).toBe(2);
   });
 
-  it("does not retry a permanent review failure", async () => {
+  it("does not retry prose lookalikes or untyped permanent protocol failures", async () => {
     vi.useFakeTimers();
-    let attempts = 0;
-    const review = runCodeRabbitReviewWithRetry(
-      () => {
-        attempts += 1;
-        return Promise.reject(
-          new Error(
-            "CodeRabbit emitted an invalid finding at line 1\nCodeRabbit did not emit a completion event",
-          ),
-        );
-      },
-      { retryDelaysMilliseconds: [1_000, 2_000] },
-    );
+    for (const error of [
+      new Error("rate limit"),
+      new CodeRabbitProtocolError("CodeRabbit emitted an invalid finding"),
+    ]) {
+      let attempts = 0;
+      const review = runCodeRabbitReviewWithRetry(
+        () => {
+          attempts += 1;
+          return Promise.reject(error);
+        },
+        { retryDelaysMilliseconds: [1_000, 2_000] },
+      );
 
-    await expect(review).rejects.toThrow("invalid finding");
-    expect(attempts).toBe(1);
-    expect(vi.getTimerCount()).toBe(0);
+      await expect(review).rejects.toBe(error);
+      expect(attempts).toBe(1);
+      expect(vi.getTimerCount()).toBe(0);
+    }
   });
 
-  it("fails closed after the bounded transient retry schedule is exhausted", async () => {
+  it("fails closed after the bounded typed retry schedule is exhausted", async () => {
     vi.useFakeTimers();
     let attempts = 0;
     const review = runCodeRabbitReviewWithRetry(
       () => {
         attempts += 1;
         return Promise.reject(
-          new Error("CodeRabbit did not emit a completion event"),
+          new CodeRabbitProtocolError(
+            "CodeRabbit did not emit a completion event",
+            "missing_terminal_completion",
+          ),
         );
       },
       { retryDelaysMilliseconds: [1_000, 2_000] },
@@ -253,7 +299,7 @@ describe("CodeRabbit transient review retries", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("aborts an in-progress backoff without starting another attempt", async () => {
+  it("aborts an in-progress typed backoff without starting another attempt", async () => {
     vi.useFakeTimers();
     const controller = new AbortController();
     const cancellation = new Error("assignment cancelled");
@@ -261,7 +307,12 @@ describe("CodeRabbit transient review retries", () => {
     const review = runCodeRabbitReviewWithRetry(
       () => {
         attempts += 1;
-        return Promise.reject(new Error("Rate limit exceeded"));
+        return Promise.reject(
+          new CodeRabbitProtocolError(
+            "CodeRabbit emitted a rate_limit error event",
+            "structured_rate_limit",
+          ),
+        );
       },
       {
         signal: controller.signal,
@@ -296,8 +347,27 @@ describe("CodeRabbit controller policy", () => {
     expect(first.content).toContain("Hard Requirements");
     expect(first.content).toContain("Forbidden Claims");
     expect(first.content).toContain(
-      "not supported by the approved facts is a critical finding",
+      "Report every business claim absent from approved facts or cited research as critical",
     );
+    expect(first.content).toContain(
+      `Policy pack: ${CODERABBIT_POLICY_PACK_VERSION}`,
+    );
+    expect(first.content).toContain(
+      `Policy pack digest: ${CODERABBIT_POLICY_PACK_DIGEST}`,
+    );
+    expect(first.content).toContain(
+      `Controller config digest: ${CODERABBIT_CONTROLLER_CONFIG_DIGEST}`,
+    );
+    expect(first.content).toContain(
+      `Controller rules digest: ${CODERABBIT_CONTROLLER_RULES_DIGEST}`,
+    );
+    expect(first.content).toContain(
+      `Tool policy digest: ${CODERABBIT_TOOL_POLICY_DIGEST}`,
+    );
+    expect(first.content).toContain(
+      `Event schema digest: ${CODERABBIT_EVENT_SCHEMA_DIGEST}`,
+    );
+    expect(first.digest).toMatch(/^[a-f0-9]{64}$/u);
 
     const changed = structuredClone(contract);
     changed.requirements[0]!.description = "A materially changed requirement";
@@ -366,15 +436,19 @@ describe("CodeRabbit controller policy", () => {
     ).resolves.toBeUndefined();
 
     const result = parseCodeRabbitEvents(
-      [
-        JSON.stringify({
+      jsonl([
+        reviewContext(),
+        {
           type: "finding",
           severity: "major",
           fileName: "src/index.ts",
+          codegenInstructions: "",
           comment: "Validate this behavior.",
-        }),
-        JSON.stringify({ type: "complete", status: "review_completed" }),
-      ].join("\n"),
+          suggestions: [],
+        },
+        complete(1),
+      ]),
+      expectedContext,
     );
     await expect(
       validateReviewFindingPaths(workspace, result.findings),
@@ -388,6 +462,83 @@ describe("CodeRabbit controller policy", () => {
 });
 
 describe("CodeRabbit process lifecycle", () => {
+  it("fails closed when valid JSONL heartbeats stop before completion", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "coderabbit-idle-"));
+    temporaryDirectories.push(directory);
+    const script = join(directory, "review-idles.cjs");
+    await writeFile(
+      script,
+      [
+        `process.stdout.write(${JSON.stringify(
+          `${JSON.stringify(reviewContext())}\n`,
+        )});`,
+        "process.on('SIGTERM', () => {});",
+        "setInterval(() => {}, 1000);",
+      ].join("\n"),
+      "utf8",
+    );
+
+    let error: unknown;
+    try {
+      await runStreamingCommand({
+        binary: process.execPath,
+        args: [script],
+        cwd: directory,
+        env: process.env,
+        expectedContext,
+        timeoutMilliseconds: 5_000,
+        idleTimeoutMilliseconds: 100,
+      });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(CodeRabbitProtocolError);
+    expect(error).toMatchObject({
+      message: "CodeRabbit review stopped emitting JSONL events",
+      retryReason: "missing_terminal_completion",
+    });
+  }, 5_000);
+
+  it("does not retry a scope-forged partial stream as missing completion", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "coderabbit-idle-"));
+    temporaryDirectories.push(directory);
+    const script = join(directory, "review-forges-context.cjs");
+    await writeFile(
+      script,
+      [
+        `process.stdout.write(${JSON.stringify(
+          `${JSON.stringify({
+            ...reviewContext(),
+            baseCommit: "b".repeat(40),
+          })}\n`,
+        )});`,
+        "process.on('SIGTERM', () => {});",
+        "setInterval(() => {}, 1000);",
+      ].join("\n"),
+      "utf8",
+    );
+
+    let error: unknown;
+    try {
+      await runStreamingCommand({
+        binary: process.execPath,
+        args: [script],
+        cwd: directory,
+        env: process.env,
+        expectedContext,
+        timeoutMilliseconds: 5_000,
+        idleTimeoutMilliseconds: 100,
+      });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(CodeRabbitProtocolError);
+    expect(error).toMatchObject({
+      message: "CodeRabbit review stopped emitting JSONL events",
+      retryReason: undefined,
+    });
+  }, 5_000);
+
   it("kills the full process group and settles after a timed-out review", async () => {
     if (process.platform === "win32") {
       return;
@@ -462,6 +613,42 @@ describe("CodeRabbit process lifecycle", () => {
     await expectProcessExit(descendantPid);
   }, 10_000);
 });
+
+function reviewContext(): {
+  type: "review_context";
+  reviewType: "committed";
+  currentBranch: string;
+  baseBranch: string;
+  baseCommit: string;
+  workingDirectory: string;
+} {
+  return {
+    type: "review_context",
+    reviewType: "committed",
+    currentBranch: expectedContext.currentBranch,
+    baseBranch: "main",
+    baseCommit: expectedContext.baseCommit,
+    workingDirectory: expectedContext.workingDirectory,
+  };
+}
+
+function complete(findings = 0): {
+  type: "complete";
+  status: "review_completed";
+  findings: number;
+  reviewedFiles: string[];
+} {
+  return {
+    type: "complete",
+    status: "review_completed",
+    findings,
+    reviewedFiles: [...expectedContext.expectedFiles],
+  };
+}
+
+function jsonl(events: readonly unknown[]): string {
+  return events.map((event) => JSON.stringify(event)).join("\n");
+}
 
 async function makeWorkspace(files: Record<string, string>): Promise<string> {
   const workspace = await mkdtemp(join(tmpdir(), "coderabbit-test-"));

@@ -49,10 +49,24 @@ const ConfigSchema = z
       .min(1)
       .max(256)
       .default("buildlabs-dind-browser-v2"),
+    DAYTONA_SNAPSHOT_ATTESTATION_PATH: z
+      .string()
+      .min(1)
+      .default(".buildlabs/daytona/snapshot-attestation.json"),
+    DAYTONA_PROVISIONER_SOURCE_PATH: z
+      .string()
+      .min(1)
+      .default("scripts/provision-daytona-snapshot.ts"),
+    DAYTONA_TELEMETRY_PATH: z
+      .string()
+      .min(1)
+      .default(".buildlabs/daytona/telemetry.jsonl"),
+    DAYTONA_WARM_POOL_ROLES: z.string().default(""),
     DAYTONA_OTEL_ENABLED: z
       .enum(["true", "false"])
       .default("false")
       .transform((value) => value === "true"),
+    DAYTONA_OTEL_SAFE_POLICY_ATTESTATION: z.string().min(1).optional(),
     FIREWORKS_API_KEY: z.string().min(20),
     FIREWORKS_BASE_URL: SecureServiceUrlSchema.default(
       "https://api.fireworks.ai/inference/v1",
@@ -60,12 +74,12 @@ const ConfigSchema = z
     FIREWORKS_MODEL: z
       .string()
       .min(1)
-      .default("accounts/fireworks/models/kimi-k2p7-code"),
+      .default("accounts/fireworks/models/glm-5p2"),
     FIREWORKS_BUILDER_MODEL: z.string().min(1).optional(),
     FIREWORKS_STUDIO_MODEL: z
       .string()
       .min(1)
-      .default("accounts/fireworks/routers/kimi-k2p6-turbo"),
+      .default("accounts/fireworks/models/kimi-k2p6"),
     FIREWORKS_EVALUATOR_MODEL: z.string().min(1).optional(),
     FIREWORKS_VISION_MODEL: z
       .string()
@@ -85,6 +99,7 @@ const ConfigSchema = z
       .regex(/^(?:seng|agent)_[A-Za-z0-9_-]+$/)
       .optional(),
     ELEVENLABS_TOOL_SECRET: z.string().min(32).optional(),
+    ELEVENLABS_CAPABILITY_SECRET: z.string().min(32).optional(),
     CODERABBIT_AUTH_MODE: z
       .enum(["oauth", "preauthenticated"])
       .default("preauthenticated"),
@@ -140,6 +155,14 @@ const ConfigSchema = z
         message:
           "ELEVENLABS_API_KEY is required when ELEVENLABS_SPEECH_ENGINE_ID is configured",
         path: ["ELEVENLABS_API_KEY"],
+      });
+    }
+    if (config.ELEVENLABS_TOOL_SECRET && !config.ELEVENLABS_CAPABILITY_SECRET) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "ELEVENLABS_CAPABILITY_SECRET is required when ELEVENLABS_TOOL_SECRET is configured",
+        path: ["ELEVENLABS_CAPABILITY_SECRET"],
       });
     }
   });

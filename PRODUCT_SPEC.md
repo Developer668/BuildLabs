@@ -30,14 +30,27 @@ for **proving the result is correct before the customer ever sees it.**
 > sanitized build activity, last-known-good release projection, and a
 > content-free pending-login reconciliation index that keeps terminal projects
 > recoverable.
-> The local Voice Intake workspace reads a bounded ElevenLabs archive on demand
-> without a second transcript store and forwards signature-verified completed
-> sessions into the protected, idempotent orchestration intake endpoint. Browser
-> voice itself, the Next.js/CopilotKit customer UI, SSE, a customer-renderable
-> raster WIP gateway, server-side session revocation/logout/renewal, edge rate
-> limits, and provider-backed end-to-end proof remain separate work. Production
-> deployment and customer delivery still require configured Stripe, Resend,
-> Fly.io, and sponsor accounts.
+> The local Voice Intake workspace implements signed browser microphone
+> sessions against a zero-traffic ElevenAgents development branch, a
+> controller-owned Fireworks custom-LLM bridge, bounded intake tools, and
+> on-demand reads from the ElevenLabs archive without a second transcript
+> store. Signature-verified, provider-complete sessions are forwarded into the
+> protected, idempotent orchestration intake endpoint. The repository-owned
+> agent manifest and expected-base-version reconciler default to a read-only
+> plan and cannot merge or move production traffic. The selected PSTN transport
+> is an inbound-only Plivo Zentrunk that sends one dedicated existing test DID
+> directly to an ElevenLabs SIP phone resource pinned to that development
+> branch and testing environment. A separately authenticated pre-call webhook
+> mints the same conversation-bound capabilities used by browser voice. Plivo
+> does not record, transcribe, or become a second archive. Real provider
+> resources, simulations, browser or PSTN audio, webhook delivery, and
+> orchestration end-to-end behavior remain unverified until a dedicated
+> BuildLabs agent, branch, version, secrets, webhook, public HTTPS origin, SIP
+> phone resource, and test-number route are configured. The
+> Next.js/CopilotKit customer UI, SSE, a customer-renderable raster WIP gateway,
+> server-side session revocation/logout/renewal, and edge rate limits remain
+> separate work. Production deployment and customer delivery still require
+> configured Stripe, Resend, Fly.io, and sponsor accounts.
 > Today, research capture requires an explicitly authorized caller-owned URL
 > (business-name discovery and licensed asset reuse are not wired), and the
 > autonomous deploy path supports self-contained HTTP containers; typed
@@ -87,7 +100,7 @@ a blanket "correct."
 
 ```mermaid
 flowchart TD
-    Input["Browser voice now; Plivo transport later<br/>or inbound email/text"] --> Gather["Gather context<br/>extract/minimize PII · clarify · consented research"]
+    Input["Browser voice or inbound Plivo test call<br/>or inbound email/text"] --> Gather["Gather context<br/>extract/minimize PII · clarify · consented research"]
     Gather --> Access["Resend one-time sign-in link<br/>click verifies email ownership"]
     Access --> Proposal["Proposal + Acceptance Contract vN<br/>scope · cited facts · amount/currency"]
     Proposal --> Email["Resend proposal email<br/>version-bound Stripe Checkout URL"]
@@ -132,7 +145,7 @@ Every transition runs the same durable agent cycle:
 
 The customer journey is:
 
-1. **Intake** — the browser voice agent, future Plivo voice transport, or an
+1. **Intake** — the browser voice agent, inbound Plivo test transport, or an
    inbound email/text captures the requested product, name, email, phone,
    caller-approved own-business research, and an agreed quote. The voice agent
    does not read personal details back or ask the caller to confirm them.
@@ -213,9 +226,31 @@ built and tested independently.
   - Aims to close: resolves scope and price before ending while avoiding a
     repetitive personal-detail confirmation script.
 - **Output:** a structured backend **transcript** handed to the orchestrator.
-- **Transport:** the first surface is browser voice. A future adapter is planned
-  to carry the same ElevenLabs/Fireworks conversation through Plivo for PSTN
-  calls, but Plivo is intentionally not wired in this repository yet (see §8).
+- **Transport:** browser voice and one dedicated inbound Plivo test DID carry
+  the same ElevenLabs/Fireworks conversation. Plivo Zentrunk terminates through
+  TLS/SRTP at an ElevenLabs SIP phone resource pinned to the zero-traffic
+  development branch and `testing` environment. ElevenLabs remains the sole
+  ASR, conversation, archive, completion-webhook, and normalized-intake
+  authority. Plivo recording, transcription, outbound calling, number purchase,
+  and production routing are excluded.
+- **Governance:** the repository owns the complete agent manifest, bounded
+  tests, and zero-traffic development-branch policy. Reconciliation is
+  plan-first, requires an explicit expected base version to apply, and reads
+  configuration back before reporting success. Plivo reconciliation also
+  requires an expected cross-provider base digest and a separate explicit
+  test-number-routing flag; it never purchases, releases, deletes, or silently
+  reassigns a number. The browser receives only a server-minted signed
+  conversation URL plus conversation-scoped capabilities. For SIP calls, an
+  authenticated ElevenLabs pre-call webhook validates the provider-marked
+  agent, conversation, call, and called-number fields, discards caller identity,
+  and returns only an opaque project binding, short-lived tool capability,
+  contract version, pinned agent version, branch, and testing environment.
+  ElevenLabs, Plivo, and Fireworks credentials remain server-side.
+- **Runtime:** ElevenLabs owns ASR, turn-taking, interruption, and audio. The
+  authenticated Chat Completions bridge validates and bounds every request and
+  Fireworks stream, strips private reasoning, permits only the declared tools,
+  and fails closed on malformed output, provider failure, or unsafe personal
+  detail read-back.
 
 ### 3.2 Normalized intake record
 
@@ -857,22 +892,23 @@ live.
 
 ---
 
-## 8. Deferred decisions (deliberately not wired yet)
+## 8. Deferred decisions
 
 These are intentional gaps, not oversights. Do not implement them until chosen.
 
-- **Plivo PSTN adapter** — browser voice is the first intake surface and
-  ElevenLabs/Fireworks own the conversation. A later transport adapter will
-  carry that same normalized intake contract through Plivo; no Plivo dependency,
-  webhook, or credential is wired yet.
+- **Plivo outbound and production telephony** — inbound PSTN on one dedicated
+  existing test DID is now selected. Outbound calls, prospecting, number
+  purchase/release, production traffic, Plivo recording/transcription, and a
+  custom Plivo media proxy remain deferred.
 - **General multi-tenant identity** — WorkOS remains dropped. The implemented
   target is narrower: separate operator auth plus application-owned,
   project-scoped passwordless customer sessions.
 - **No prior-codebase reuse** — BuildLabs is built fresh. Earlier projects
   (including BuildStax) are **not** to be reused or copied.
 
-> **Now decided (no longer deferred):** hosting, payment, and customer
-> observation. Raw Daytona URLs remain operator-only; authenticated customers
+> **Now decided (no longer deferred):** hosting, payment, customer observation,
+> and inbound Plivo test transport. Raw Daytona URLs remain operator-only;
+> authenticated customers
 > can watch a sanitized `UNVERIFIED WIP` projection, but only a frozen, proven
 > snapshot becomes a review preview. Production runs on **Fly.io**; the
 > dashboard and emailed **production URL** identify the final artifact.
@@ -920,9 +956,9 @@ The payoff: BuildLabs didn't just generate something attractive — it delivered
 
 ## 10. Boundaries
 
-**In scope:** browser voice intake, a future Plivo PSTN transport adapter, email
-delivery, the passwordless customer dashboard, consented research of the
-caller's own business, and automated production deploys.
+**In scope:** browser voice intake, inbound Plivo transport on one dedicated
+test DID, email delivery, the passwordless customer dashboard, consented
+research of the caller's own business, and automated production deploys.
 
 **Guardrails that still hold:**
 
@@ -949,9 +985,10 @@ caller's own business, and automated production deploys.
 - **Nothing ships unproven.** Deploy + delivery happen *only* after the automated
   proof gate passes.
 - **No prior-codebase reuse** (BuildStax or otherwise) — build fresh.
-- **Deferred transports stay unwired:** the planned Plivo adapter is not part of
-  this backend change. Vercel and v0 remain excluded (Fly.io is the production
-  host).
+- **Telephony remains test-only and inbound-only:** no outbound calling,
+  prospecting, number purchase/release, Plivo recording/transcription, custom
+  media proxy, or production routing. Vercel and v0 remain excluded (Fly.io is
+  the production host).
 
 This is the complete idea: **build anything a caller asks for, from a
 conversation, prove it against what they actually asked for, and deploy the

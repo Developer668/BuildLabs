@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 
+import {
+  DAYTONA_SDK_OTEL_SAFE_POLICY_ATTESTATION,
+  resolveDaytonaSdkOtelPolicy,
+} from "../src/adapters/daytona/daytona-control-plane.js";
 import { daytonaTelemetryLabels } from "../src/adapters/daytona/daytona-sandbox.js";
 import { loadConfig } from "../src/config.js";
 
@@ -40,7 +44,7 @@ describe("Daytona sandbox observability", () => {
     ).toThrow("Daytona telemetry label value is invalid");
   });
 
-  it("parses the Daytona OTEL switch as an explicit boolean", () => {
+  it("parses the Daytona OTEL request without treating it as policy approval", () => {
     const config = loadConfig({
       NODE_ENV: "test",
       DAYTONA_API_KEY: "d".repeat(20),
@@ -51,5 +55,33 @@ describe("Daytona sandbox observability", () => {
     });
 
     expect(config.DAYTONA_OTEL_ENABLED).toBe(true);
+    expect(
+      resolveDaytonaSdkOtelPolicy({
+        requested: config.DAYTONA_OTEL_ENABLED,
+        exporterConfigured: true,
+        safePolicyAttestation: config.DAYTONA_OTEL_SAFE_POLICY_ATTESTATION,
+      }).enabled,
+    ).toBe(false);
+  });
+
+  it("requires the exact reviewed policy value before SDK OTEL can enable", () => {
+    const config = loadConfig({
+      NODE_ENV: "test",
+      DAYTONA_API_KEY: "d".repeat(20),
+      DAYTONA_OTEL_ENABLED: "true",
+      DAYTONA_OTEL_SAFE_POLICY_ATTESTATION:
+        DAYTONA_SDK_OTEL_SAFE_POLICY_ATTESTATION,
+      FIREWORKS_API_KEY: "f".repeat(20),
+      BRAINTRUST_API_KEY: "b".repeat(20),
+      CODERABBIT_AUTH_MODE: "oauth",
+    });
+
+    expect(
+      resolveDaytonaSdkOtelPolicy({
+        requested: config.DAYTONA_OTEL_ENABLED,
+        exporterConfigured: true,
+        safePolicyAttestation: config.DAYTONA_OTEL_SAFE_POLICY_ATTESTATION,
+      }).enabled,
+    ).toBe(true);
   });
 });

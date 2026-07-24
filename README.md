@@ -23,12 +23,18 @@ Most AI builders optimize for a fast first draft. BuildLabs optimizes for
 > backend slice now includes scanner-safe passwordless exchange, project-scoped
 > sessions, bounded signed-capability access-link reissue, terminal-project mail
 > recovery, CSRF-protected steering, polling snapshots/events, and sanitized
-> build activity. A local Voice Intake workspace reads the bounded ElevenLabs
-> archive on demand and forwards signature-verified completed sessions into the
-> protected orchestration intake contract without persisting a second transcript
-> copy. The browser voice client, Next.js/CopilotKit dashboard frontend, SSE, a
-> customer-renderable raster WIP gateway, production-complete session controls,
-> and provider-backed end-to-end verification remain separate work.
+> build activity. A local Voice Intake workspace now provides signed browser
+> microphone sessions on a zero-traffic ElevenAgents branch, a server-only
+> Fireworks custom-LLM bridge, bounded intake tools, and authoritative
+> on-demand ElevenLabs archive reads without persisting a second transcript
+> copy. An inbound-only Plivo Zentrunk can carry one dedicated test DID directly
+> to an ElevenLabs SIP resource on the same testing branch; Plivo never becomes
+> a second recorder or transcript store. Both reconcilers are plan-first, use
+> expected-base CAS, and cannot merge or move production traffic. The
+> Next.js/CopilotKit
+> dashboard frontend, SSE, a customer-renderable raster WIP gateway,
+> production-complete session controls, and provider-backed end-to-end
+> verification remain separate work.
 > Full spec:
 > [`PRODUCT_SPEC.md`](./PRODUCT_SPEC.md). Guardrails and real commands:
 > [`AGENTS.md`](./AGENTS.md).
@@ -71,7 +77,7 @@ honestly weaker for arbitrary apps, and the system reports *what* it proved.
 
 ```mermaid
 flowchart TD
-    Input["Browser voice now; Plivo later<br/>or email/text"] --> Context["Gather context<br/>minimize PII · clarify · consented cited research"]
+    Input["Browser voice or inbound Plivo test call<br/>or email/text"] --> Context["Gather context<br/>minimize PII · clarify · consented cited research"]
     Context --> Login["Resend one-time sign-in<br/>verify email ownership"]
     Login --> Proposal["Proposal + Acceptance Contract vN"]
     Proposal --> Mail["Resend email + version-bound Stripe Checkout"]
@@ -299,11 +305,12 @@ separate operator access and project-scoped passwordless customer sessions.
   separating `unconfigured`, `configured`, `healthy`, and
   `end-to-end-verified`; it does not call an uncreated remote resource healthy.
 
-## Deferred (not wired yet)
+## Deferred
 
-- **Plivo PSTN transport adapter** — browser voice comes first; a later Plivo
-  adapter will carry the same ElevenLabs/Fireworks normalized intake, but it is
-  not wired here yet.
+- **Plivo outbound and production telephony** — inbound PSTN on one dedicated
+  existing test DID is selected. Outbound calls, number purchase/release,
+  production routing, Plivo recording/transcription, and a custom media proxy
+  remain excluded.
 - **Controller-attested acceptance-test bundles** — project test commands are
   candidate-owned build evidence; independent requirement proof currently comes
   from explicit contract command and rendered-HTTP receipts.
@@ -349,10 +356,18 @@ Docker-in-Docker + Chromium snapshot with `npm run provision:daytona`, then run
 `npm run check`. The provisioner performs real Docker build/run and rendered
 visibility probes before accepting the snapshot. Development uses `npm run dev`
 for the build backend and `npm run dev:orchestration` for the general
-orchestrator. `npm run dev:voice` starts the local Voice Intake workspace; its
-server-only bridge requires `ELEVENLABS_AGENT_ID`, `ELEVENLABS_API_KEY`,
-`ELEVENLABS_WEBHOOK_SECRET`, and `ORCHESTRATION_INTERNAL_TOKEN`. It defaults to
-the local orchestrator at `http://127.0.0.1:3100`.
+orchestrator. `npm run dev:voice` starts the local Voice Intake workspace. Its
+browser path requires the pinned ElevenLabs agent, development branch and
+version, controller/session/tool/custom-LLM secrets, a Fireworks voice model,
+and exact production origins; the post-call bridge additionally requires the
+webhook and orchestration secrets. See
+[`apps/voice-intake/README.md`](./apps/voice-intake/README.md) for the complete
+server-only variable list. It defaults to the local orchestrator at
+`http://127.0.0.1:3100`. `npm run elevenlabs:reconcile` is read-only by default;
+an apply also requires `--apply --expected-base-version=<version>`.
+`npm run plivo:probe` performs bounded read-only SIP inventory, while
+`npm run plivo:reconcile` defaults to plan; applying requires
+`--apply --expected-base-digest=<digest> --allow-number-routing`.
 
 After `npm run build`, `npm start` is the production supervisor: it sets
 `NODE_ENV=production`, starts both compiled backends, and stops the pair if
