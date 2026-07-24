@@ -19,6 +19,7 @@ export async function GET() {
     {
       phoneDisplay: phone ? displayPhoneNumber(phone) : "Phone number not configured",
       phoneHref: phone ? `tel:${phone}` : "",
+      accessRequired: Boolean(process.env.CALL_LAB_ACCESS_CODE?.trim()),
     },
     { headers: { "cache-control": "no-store" } },
   );

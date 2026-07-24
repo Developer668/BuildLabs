@@ -35,6 +35,7 @@ type CallRecord = {
 type PublicConfig = {
   phoneDisplay: string;
   phoneHref: string;
+  accessRequired: boolean;
 };
 
 function formatTime(value: string) {
@@ -67,11 +68,12 @@ export function CallLab() {
   const [config, setConfig] = useState<PublicConfig>({
     phoneDisplay: "Phone number not configured",
     phoneHref: "",
+    accessRequired: true,
   });
   const [accessCode, setAccessCode] = useState("");
   const [calls, setCalls] = useState<CallRecord[]>([]);
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState("Enter the dashboard access code to load transcripts.");
+  const [message, setMessage] = useState("Loading local transcripts…");
   const [warning, setWarning] = useState("");
   const [copied, setCopied] = useState(false);
 
@@ -87,8 +89,12 @@ export function CallLab() {
     };
   }, [calls]);
 
-  const loadCalls = useCallback(async (quiet = false) => {
-    if (!accessCode) {
+  const loadCalls = useCallback(async (
+    quiet = false,
+    suppliedAccessCode = "",
+    allowWithoutAccess = false,
+  ) => {
+    if (!suppliedAccessCode && !allowWithoutAccess) {
       setCalls([]);
       setMessage("Enter the dashboard access code to load transcripts.");
       return;
@@ -96,13 +102,16 @@ export function CallLab() {
     if (!quiet) setLoading(true);
     try {
       const response = await fetch("/api/calls", {
-        headers: { "x-call-lab-key": accessCode },
+        headers: suppliedAccessCode
+          ? { "x-call-lab-key": suppliedAccessCode }
+          : undefined,
         cache: "no-store",
       });
       const body = (await response.json().catch(() => ({}))) as {
         calls?: CallRecord[];
         error?: string;
         warning?: string;
+        processing?: number;
       };
       if (!response.ok) {
         setCalls([]);
@@ -110,21 +119,39 @@ export function CallLab() {
         return;
       }
       setCalls(body.calls ?? []);
-      setWarning(body.warning ?? "");
-      setMessage(body.calls?.length ? "" : "No transcripts yet. Call the number above, finish the intake, then refresh.");
+      setWarning(
+        body.warning ||
+          (body.processing
+            ? `${body.processing} call transcript is still processing. Wait a few seconds, then press Refresh again.`
+            : ""),
+      );
+      setMessage(
+        body.calls?.length
+          ? ""
+          : body.processing
+            ? "The call ended, but ElevenLabs is still processing its transcript. Wait a few seconds, then press Refresh again."
+            : "No transcripts yet. Call the number above, finish the intake, then refresh.",
+      );
     } catch {
       setMessage("Transcripts could not be loaded.");
     } finally {
       if (!quiet) setLoading(false);
     }
-  }, [accessCode]);
+  }, []);
 
   useEffect(() => {
     void fetch("/api/public-config", { cache: "no-store" })
       .then(async (response) => (await response.json()) as PublicConfig)
-      .then(setConfig)
+      .then((nextConfig) => {
+        setConfig(nextConfig);
+        if (nextConfig.accessRequired) {
+          setMessage("Enter the dashboard access code to load transcripts.");
+        } else {
+          void loadCalls(false, "", true);
+        }
+      })
       .catch(() => undefined);
-  }, []);
+  }, [loadCalls]);
 
   async function copyPhone() {
     if (!config.phoneHref) return;
@@ -144,7 +171,14 @@ export function CallLab() {
             time about the website, then the transcript appears here when the call ends.
           </p>
         </div>
-        <button className="refreshButton" disabled={loading} onClick={() => void loadCalls()} type="button">
+        <button
+          className="refreshButton"
+          disabled={loading}
+          onClick={() =>
+            void loadCalls(false, accessCode, !config.accessRequired)
+          }
+          type="button"
+        >
           {loading ? "Refreshing…" : "Refresh"}
         </button>
       </header>
@@ -160,19 +194,21 @@ export function CallLab() {
         </button>
       </section>
 
-      <section className="accessRow">
-        <label htmlFor="access-code">Dashboard access</label>
-        <input
-          id="access-code"
-          onChange={(event) => setAccessCode(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") void loadCalls();
-          }}
-          placeholder="Access code"
-          type="password"
-          value={accessCode}
-        />
-      </section>
+      {config.accessRequired && (
+        <section className="accessRow">
+          <label htmlFor="access-code">Dashboard access</label>
+          <input
+            id="access-code"
+            onChange={(event) => setAccessCode(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") void loadCalls(false, accessCode);
+            }}
+            placeholder="Access code"
+            type="password"
+            value={accessCode}
+          />
+        </section>
+      )}
 
       <section className="stats" aria-label="Transcript totals">
         <div><strong>{totals.calls}</strong><span>Calls</span></div>

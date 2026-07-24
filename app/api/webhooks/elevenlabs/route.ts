@@ -2,6 +2,7 @@ import { upsertInboundCall } from "../../../../db/calls";
 import {
   cleanProviderText,
   cleanTranscript,
+  intakeEvaluationSucceeded,
   safeWebhookSummary,
   verifyElevenLabsWebhook,
 } from "../../../../lib/elevenlabs";
@@ -157,19 +158,22 @@ export async function POST(request: Request) {
   }
 
   const analysis = record(data.analysis);
-  const failed =
+  const providerFailed =
     event.type === "call_initiation_failure" ||
     data.status === "failed" ||
     analysis.call_successful === "failure";
+  const successful = intakeEvaluationSucceeded(data);
   await upsertInboundCall({
     ...details,
-    status: failed ? "failed" : "successful",
+    status: successful ? "successful" : "failed",
     transcript: cleanTranscript(data.transcript),
     summary: safeWebhookSummary(data),
     error:
-      details.providerError ||
-      (failed ? evaluationFailureReason(data) : "") ||
-      (failed ? "The phone call did not complete successfully." : ""),
+      successful && providerFailed
+        ? `The website intake completed successfully, but the phone connection reported a technical ending${details.providerError ? `: ${details.providerError}` : "."}`
+        : details.providerError ||
+          evaluationFailureReason(data) ||
+          "The phone call did not complete successfully.",
   });
 
   return Response.json({ received: true });

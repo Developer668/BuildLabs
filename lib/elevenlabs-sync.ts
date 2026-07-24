@@ -2,6 +2,7 @@ import { listCalls, upsertInboundCall } from "../db/calls";
 import {
   cleanProviderText,
   cleanTranscript,
+  intakeEvaluationSucceeded,
   safeWebhookSummary,
 } from "./elevenlabs";
 
@@ -64,8 +65,10 @@ export async function syncCompletedElevenLabsCalls() {
   const agentId = process.env.ELEVENLABS_AGENT_ID?.trim();
   if (!agentId) throw new Error("ELEVENLABS_AGENT_ID is not configured.");
 
-  const known = new Set(
-    (await listCalls(100)).map((call) => call.conversationId).filter(Boolean),
+  const known = new Map(
+    (await listCalls(100))
+      .filter((call) => call.conversationId)
+      .map((call) => [call.conversationId, call]),
   );
   const query = new URLSearchParams({
     agent_id: agentId,
@@ -77,13 +80,23 @@ export async function syncCompletedElevenLabsCalls() {
     : [];
 
   let saved = 0;
+  let processing = 0;
   for (const value of conversations) {
     const summary = record(value);
     const conversationId = firstText(160, summary.conversation_id);
     const status = firstText(40, summary.status);
+    if (conversationId && !["done", "failed"].includes(status)) {
+      processing += 1;
+      continue;
+    }
+    const existing = known.get(conversationId);
+    const needsLegacyRecheck =
+      existing?.status === "failed" &&
+      existing.error ===
+        "The call ended before the website intake was fully verified.";
     if (
       !conversationId ||
-      known.has(conversationId) ||
+      (existing && !needsLegacyRecheck) ||
       !["done", "failed"].includes(status)
     ) {
       continue;
@@ -101,7 +114,15 @@ export async function syncCompletedElevenLabsCalls() {
       const clientData = record(data.conversation_initiation_client_data);
       const dynamicVariables = record(clientData.dynamic_variables);
       const startedAt = Number(metadata.start_time_unix_secs);
-      const successful = analysis.call_successful === "success";
+      const successful = intakeEvaluationSucceeded(data);
+      const providerFailed =
+        data.status === "failed" || analysis.call_successful === "failure";
+      const providerIssue = firstText(
+        1000,
+        metadata.termination_reason,
+        record(metadata.error).message,
+        record(metadata.error).reason,
+      );
 
       await upsertInboundCall({
         conversationId,
@@ -133,7 +154,12 @@ export async function syncCompletedElevenLabsCalls() {
         status: successful ? "successful" : "failed",
         transcript: cleanTranscript(data.transcript),
         summary: safeWebhookSummary(data),
-        error: successful ? "" : failureReason(data),
+        error:
+          successful && providerFailed
+            ? `The website intake completed successfully, but the phone connection reported a technical ending${providerIssue ? `: ${providerIssue}` : "."}`
+            : successful
+              ? ""
+              : failureReason(data),
         durationSeconds: Math.max(
           0,
           Math.round(Number(metadata.call_duration_secs) || 0),
@@ -149,12 +175,11 @@ export async function syncCompletedElevenLabsCalls() {
             ? new Date(startedAt * 1000).toISOString()
             : undefined,
       });
-      known.add(conversationId);
       saved += 1;
     } catch {
       // One malformed or unavailable conversation should not hide the archive.
     }
   }
 
-  return { saved };
+  return { saved, processing };
 }

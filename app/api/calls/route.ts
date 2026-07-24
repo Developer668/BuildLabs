@@ -7,8 +7,10 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   if (!callLabAuthorized(request)) return unauthorizedResponse();
   let warning = "";
+  let processing = 0;
   try {
-    await syncCompletedElevenLabsCalls();
+    const sync = await syncCompletedElevenLabsCalls();
+    processing = sync.processing;
   } catch (error) {
     warning =
       error instanceof Error
@@ -18,7 +20,7 @@ export async function GET(request: Request) {
 
   try {
     return Response.json(
-      { calls: await listCalls(), warning },
+      { calls: await listCalls(), warning, processing },
       { headers: { "cache-control": "no-store" } },
     );
   } catch {

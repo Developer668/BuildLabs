@@ -29,6 +29,33 @@ export function cleanTranscript(value: unknown): TranscriptTurn[] {
   return turns;
 }
 
+export function intakeEvaluationSucceeded(data: Record<string, unknown>) {
+  const analysis =
+    data.analysis && typeof data.analysis === "object"
+      ? (data.analysis as Record<string, unknown>)
+      : {};
+  if (analysis.call_successful === "success") return true;
+
+  const keyed = Object.entries(
+    analysis.evaluation_criteria_results &&
+      typeof analysis.evaluation_criteria_results === "object"
+      ? (analysis.evaluation_criteria_results as Record<string, unknown>)
+      : {},
+  );
+  const listed = Array.isArray(analysis.evaluation_criteria_results_list)
+    ? analysis.evaluation_criteria_results_list.map((value) => ["", value] as const)
+    : [];
+
+  return [...keyed, ...listed].some(([key, value]) => {
+    const result =
+      value && typeof value === "object"
+        ? (value as Record<string, unknown>)
+        : {};
+    const criterion = cleanProviderText(result.criteria_id, 160) || key;
+    return criterion === "intake_complete" && result.result === "success";
+  });
+}
+
 export async function verifyElevenLabsWebhook(
   rawBody: string,
   signatureHeader: string,
