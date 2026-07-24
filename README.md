@@ -341,7 +341,7 @@ mandatory gate before builder dispatch.
 ├── scripts/          # Daytona provisioning and bounded live provider probes
 ├── tests/            # Build/proof tests plus orchestration*.test.ts lifecycle tests
 ├── PRODUCT_SPEC.md   # Full product specification (source of truth)
-├── CUSTOMER_DASHBOARD_SPEC.md # Customer workspace UX, auth, events, and states
+├── ADMIN_DASHBOARD_SPEC.md   # Admin/operator dashboard UX, auth, events, and states
 ├── AGENTS.md         # Guidance, guardrails, and development commands
 ├── ORCHESTRATION_RUNTIME.md  # Runtime/configuration guide
 ├── ORCHESTRATION_PROGRESS.md # Concise implementation/test checkpoint log

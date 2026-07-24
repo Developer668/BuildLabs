@@ -4,7 +4,7 @@ BuildLabs Studio is the internal operator workspace for inspecting candidate
 website builds. It is deliberately separate from the customer dashboard:
 operators can inspect mutable work-in-progress previews and durable build
 events, while customers should only receive the sanitized progress projection
-and frozen proven previews described in `CUSTOMER_DASHBOARD_SPEC.md`.
+and frozen proven previews described in `ADMIN_DASHBOARD_SPEC.md`.
 
 The frontend lives in `studio/` and is built with React, TypeScript, Vite, and
 Lucide icons. It does not use CopilotKit UI components or an AG-UI client. Live

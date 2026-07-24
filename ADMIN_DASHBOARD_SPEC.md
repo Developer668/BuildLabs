@@ -1,87 +1,105 @@
-# BuildLabs Customer Dashboard
+# BuildLabs Admin Dashboard
 
-> Product and implementation specification for the authenticated customer
-> workspace.
+> **Product and implementation specification for the admin/operator workspace.**
 >
-> **Status:** the customer-access backend slice is implemented; the dashboard
-> frontend is not. The orchestrator rejects voice intake as email-ownership
-> proof, durably sends pre-proposal verification and post-dispatch access
-> emails, issues 15-minute project/email-bound links with the token in the URL
-> fragment, serves a scanner-safe inert GET page, atomically consumes the token
-> on POST with the ownership event, and creates a seven-day signed,
-> project-scoped session. Authenticated REST routes expose a customer project
-> projection, bounded sanitized events, and CSRF/idempotency-protected steering.
-> A failed exchange can request a fresh link using only the signed active or
-> recently expired capability; the generic endpoint rechecks protected identity,
-> mails only the stored address, and enforces one request family per capability
-> digest, 32 families per project, three delivery generations per family, a
-> durable per-project send floor, and a three-attempt optimistic-CAS reload. A
-> content-free schema-v6 pending-login index keeps terminal projects
-> reconciliable until that exact effect settles. The build backend supplies an
-> internal bounded activity projection and always reports
-> `customerRenderable: false`.
+> ---
 >
-> A Next.js/CopilotKit frontend, SSE, customer-renderable raster WIP gateway,
-> opaque customer aliases, server-side session revocation/logout/renewal and
-> edge-wide dashboard rate limits remain target work. A typed-email public link
-> request is also not implemented; reissue requires an existing signed
-> capability. Provider-backed end-to-end verification is pending. Existing
-> internal orchestration and build APIs other than the explicitly documented
-> customer-dashboard routes must not be exposed directly to a browser.
+> **Consolidation note (2026-07):** This document was originally written as the
+> _Customer Dashboard_ spec. The product decision has been made to consolidate
+> the customer-facing dashboard into the admin/operator Studio as the single
+> dashboard surface. The separate customer-facing workspace is no longer
+> planned. This spec is being updated to reflect the admin dashboard, but the
+> deep technical sections (API routes, TypeScript interfaces, auth flows in
+> sections 7–11) still reference the original `customer-dashboard` route names
+> and `Customer*` type names — these will need to be renamed in the codebase
+> alongside this spec.
 >
-> [`PRODUCT_SPEC.md`](./PRODUCT_SPEC.md) remains authoritative. If this document
-> conflicts with the payment gate, proof gate, immutable versioning, PII
-> controls, or delivery rules in the product spec, those rules win.
+> **⚠️ Conflict with PRODUCT_SPEC.md:** `PRODUCT_SPEC.md` and `AGENTS.md`
+> currently define the customer dashboard as a load-bearing part of the product
+> (passwordless customer access, sanitized WIP projection, proven preview
+> delivery). Those documents have **not yet been updated** to reflect this
+> consolidation. Until they are, any conflict between this file and
+> `PRODUCT_SPEC.md` is resolved in favour of the product spec per AGENTS.md.
+>
+> ---
+
+## Table of contents
+
+| Section                                               | Title                                     |
+| ----------------------------------------------------- | ----------------------------------------- |
+| [1](#1-product-definition)                            | Product definition                        |
+| [2](#2-goals-and-non-goals)                           | Goals and non-goals                       |
+| [3](#3-non-negotiable-truth-rules)                    | Non-negotiable truth rules                |
+| [4](#4-admin-journey)                                 | Admin journey                             |
+| [5](#5-information-architecture)                      | Information architecture                  |
+| [6](#6-display-states)                                | Display states                            |
+| [7](#7-passwordless-authentication-and-authorization) | Authentication and authorization          |
+| [8](#8-admin-api-contract)                            | Admin API contract                        |
+| [9](#9-projection-and-orchestration-architecture)     | Projection and orchestration architecture |
+| [10](#10-wip-and-preview-isolation)                   | WIP and preview isolation                 |
+| [11](#11-security-and-privacy-requirements)           | Security and privacy requirements         |
+| [12](#12-visual-and-interaction-system)               | Visual and interaction system             |
+| [13](#13-copy-rules)                                  | Copy rules                                |
+| [14](#14-frontend-component-inventory)                | Frontend component inventory              |
+| [15](#15-telemetry)                                   | Telemetry                                 |
+| [16](#16-acceptance-criteria)                         | Acceptance criteria                       |
+| [17](#17-implementation-sequence)                     | Implementation sequence                   |
+
+---
 
 ## 1. Product definition
 
-The customer dashboard is BuildLabs's private project workspace. A pre-proposal
-one-time link first verifies email possession and opens the workspace; after
-verified payment and successful build dispatch, Resend sends or reissues the
-project link in-thread and the build cockpit becomes active. The dashboard gives
-the customer:
+The admin dashboard is BuildLabs's operator workspace — the single surface where
+an operator manages projects, observes live builds, reviews evidence, approves
+steering, and tracks delivery. It replaces the previously planned separate
+customer-facing dashboard with one consolidated operator surface.
 
-- a clear view of the approved scope and current contract version;
-- truthful, near-real-time observability and explicitly unverified visual
-  renders across up to four independent Daytona builders;
-- a durable timeline of implementation, verification, preview, and deployment;
-- one place to submit steering requests or see requests received by email;
-- access to immutable proven previews and the verified production release.
+The dashboard gives the operator:
 
-The dashboard is not the operator Studio. It is a separate, project-scoped
-surface with a deliberately narrower data model and authorization boundary. The
-operator Studio may inspect raw mutable Daytona previews, complete evidence, and
-operational failures. A customer may not.
+- **Scope and contract visibility** — a clear view of the approved scope and
+  current contract version for each project.
+- **Live build observability** — near-real-time observability across up to four
+  independent Daytona builders, including raw mutable previews, complete
+  evidence, and operational failures.
+- **Durable timeline** — a timeline of implementation, verification, preview,
+  and deployment events.
+- **Steering management** — one place to submit, review, and classify steering
+  requests.
+- **Proven preview and production access** — access to immutable proven previews
+  and the verified production release.
+
+Unlike the former customer dashboard design, the admin dashboard has **full
+operator privileges**. It may inspect raw mutable Daytona previews, complete
+evidence, operational failures, sandbox identifiers, and internal provider
+state. There is no sanitized WIP projection layer — the operator sees the real
+builder output directly.
 
 The experience should feel as legible and responsive as the best AI application
-builders, while being more honest about evidence. "Live" means that the
-dashboard is replaying controller-recorded activity and, when available,
-short-lived controller-rendered pixels as work happens. It never means that an
-unproved application is approvable, downloadable, deployable, or safe to treat
-as a preview.
+builders. "Live" means the dashboard is replaying controller-recorded activity
+and, when available, the actual builder workspace as work happens.
 
-### 1.1 The key product distinction
+### 1.1 Visual surfaces
 
-BuildLabs has four different visual surfaces:
+With the customer dashboard consolidated into the admin dashboard, BuildLabs has
+three visual surfaces:
 
-| Surface                     | Audience                                   | Mutability                              | What it may show                                                                             |
-| --------------------------- | ------------------------------------------ | --------------------------------------- | -------------------------------------------------------------------------------------------- |
-| Raw Daytona builder preview | Operator only                              | Mutable                                 | Direct sandbox web view, operational inspection, and privileged recovery                     |
-| Customer WIP observation    | Authenticated customer                     | Mutable and ephemeral                   | Allowlisted durable activity plus a controller-rendered visual labeled `UNVERIFIED WIP`      |
-| Frozen proven preview       | Authenticated customer with project access | Immutable                               | The exact Daytona delivery snapshot and contract version that passed the complete proof gate |
-| Production release          | Customer and intended public audience      | Replaced only by a later proven release | The exact proven artifact deployed and health-verified on Fly.io                             |
+| Surface                     | Audience | Mutability                              | What it shows                                                                                |
+| --------------------------- | -------- | --------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Raw Daytona builder preview | Operator | Mutable                                 | Direct sandbox web view, operational inspection, and privileged recovery                     |
+| Frozen proven preview       | Operator | Immutable                               | The exact Daytona delivery snapshot and contract version that passed the complete proof gate |
+| Production release          | Public   | Replaced only by a later proven release | The exact proven artifact deployed and health-verified on Fly.io                             |
 
-The raw Daytona builder URL remains operator-only. It must never be returned by
-a customer endpoint, placed in customer HTML, included in an email, or made
-reachable through a customer session. The customer WIP render is a separate
-controller output, not a transparent proxy or alternate address for that URL.
+The raw Daytona builder URL is now directly accessible from the admin dashboard.
+The former "customer WIP observation" layer (sanitized, controller-rendered,
+labeled `UNVERIFIED WIP`) is no longer a separate surface — the operator sees
+the real builder workspace without sanitization.
 
 ## 2. Goals and non-goals
 
 ### 2.1 Goals
 
-1. Let a customer understand what BuildLabs is doing without reading logs or
-   knowing development terminology.
+1. Let an operator understand and control what BuildLabs is doing across all
+   active projects.
 2. Represent all allocated builders independently, including disagreement,
    repair, rejection, failure, and idle states.
 3. Make every displayed status traceable to a durable controller event or
@@ -90,24 +108,19 @@ controller output, not a transparent proxy or alternate address for that URL.
    history.
 5. Keep the last proven preview or production release available while a newer
    revision is being built and proved.
-6. Work comfortably on desktop and mobile, including long-running projects that
-   a customer checks intermittently.
-7. Minimize customer PII and prevent project-to-project data leakage.
+6. Work comfortably on desktop and mobile.
+7. Prevent project-to-project data leakage across operator sessions.
 
 ### 2.2 Non-goals
 
-- Exposing a terminal, raw command output, model chain of thought, model
-  prompts, Braintrust traces, internal provider identifiers, or secrets.
-- Letting the customer open, transparently proxy, or embed a mutable Daytona
-  builder URL. A controller-rendered, sanitized WIP projection is allowed.
+- Exposing model chain of thought, model prompts, Braintrust trace IDs, or
+  secrets in the UI (these remain backend-only).
 - Treating a builder's self-reported completion as proof.
-- Letting a customer choose an unproved candidate for delivery.
+- Letting an operator choose an unproved candidate for delivery.
 - Letting a dashboard instruction bypass price approval, verified payment,
   acceptance-contract versioning, proof, or deployment verification.
-- Replacing the operator Studio, its job queue, or its privileged recovery
-  controls.
 - Adding WorkOS or enterprise organizations and roles. Version 1 uses a
-  first-party passwordless email session and project-scoped grants.
+  first-party operator session.
 - Claiming that a generated persistent application can be delivered before its
   required resources are represented in a contract-bound provisioner.
 
@@ -115,22 +128,19 @@ controller output, not a transparent proxy or alternate address for that URL.
 
 The UI and API must enforce these rules, not merely describe them:
 
-1. **No payment, no build.** A dashboard can show proposal or payment status,
+1. **No payment, no build.** The dashboard can show proposal or payment status,
    but no builder may enter an active state until the exact pinned proposal is
    paid and the payment receipt is verified.
-2. **Live observation is not a review preview.** Customer build panes may
-   contain allowlisted activity and a controller-rendered visual surface. The
-   visual is persistently labeled `UNVERIFIED WIP`, has no approval, download,
-   or deploy action, and may regress or disappear. It contains no raw sandbox
-   URL, source archive, unrestricted output, or executable WIP application
-   content.
+2. **Live observation is not proof.** Build panes may show raw mutable previews
+   and activity. A live preview never means an unproved application is
+   approvable, downloadable, deployable, or safe to treat as a proven release.
 3. **No fabricated progress.** Every activity item, count, stage, and timestamp
    comes from durable state. The client must not simulate terminal text, animate
    fake steps, infer percentage complete, or cycle placeholder messages.
 4. **Unproved is labeled unproved.** `running`, `reviewing`, `evaluating`, and
-   `passed` builder states do not mean a customer deliverable exists. Only a
+   `passed` builder states do not mean a deliverable exists. Only a
    controller-accepted `candidate.proven` event can authorize an immutable
-   customer preview.
+   preview.
 5. **Hard failures stay hard.** A high design or preference score cannot conceal
    a failed hard requirement. Candidate ranking is shown only after proof and
    only among proven candidates.
@@ -143,19 +153,18 @@ The UI and API must enforce these rules, not merely describe them:
 8. **Unknown stays unknown.** Provider silence, a disconnected stream, a stale
    projection, or a missing receipt is displayed as unavailable, delayed, or
    awaiting evidence. It is never converted into success.
-9. **Customer observation is sanitized server-side.** The browser never receives
-   privileged data and then hides it with CSS. Activity crosses an allowlist;
-   the WIP visual crosses only as controller-rendered pixels with server-applied
-   unverified labeling. Disallowed content must not cross the customer API
-   boundary.
-10. **Production means verified production.** The production link appears only
-    after the Fly.io receipt binds the exact project, contract, candidate,
-    revision, artifact and image digests, release identity, HTTPS health, and
-    verification timestamps.
+9. **Production means verified production.** The production link appears only
+   after the Fly.io receipt binds the exact project, contract, candidate,
+   revision, artifact and image digests, release identity, HTTPS health, and
+   verification timestamps.
 
-## 4. Customer journey
+## 4. Admin journey
 
 ### 4.1 Intake and identity
+
+> **Note:** The intake flow (voice, email verification) remains a
+> customer-facing process at the product level. The admin dashboard observes and
+> manages it but does not replace it.
 
 The browser voice intake, future Plivo voice adapter, or message intake collects
 the customer's name, email, phone, scope, and quote as described in the product
@@ -172,6 +181,10 @@ from receiving the link and requires a focused correction. Phone is never used
 as dashboard authentication in version 1.
 
 ### 4.2 Verification and build-start links
+
+> **Note:** These link flows are customer-facing mechanisms. The admin dashboard
+> observes their state and can trigger reissues, but the operator is not the
+> link recipient.
 
 BuildLabs uses the same passwordless mechanism at two distinct moments:
 
@@ -194,43 +207,39 @@ any of those states.
 
 ### 4.3 Build observation
 
-The customer sees four stable builder lanes. Only the number requested by the
+The operator sees four stable builder lanes. Only the number requested by the
 active build batch can become allocated. Unused lanes say `Not allocated`; they
 must not impersonate agents.
 
-For each allocated builder, the customer can see:
+For each allocated builder, the operator can see:
 
 - its stable display name, such as `Builder 1`;
 - controller state and stage;
 - last recorded activity time;
-- bounded tool progress counts;
+- tool progress counts;
 - normalized activity such as editing files, running the configured build,
-  starting an operator-only local preview, repairing a review finding, or
-  entering independent verification;
-- a non-interactive, controller-rendered view of the current application when
-  the WIP gateway has a fresh safe frame;
+  starting a local preview, repairing a review finding, or entering independent
+  verification;
+- **direct access to the raw mutable Daytona preview** (no sanitization layer);
+- raw stdout/stderr and terminal output;
+- source file contents, diffs, and patches;
 - proof checks as they become available;
 - an honest terminal outcome.
 
-The visual pane always carries a server-composited `UNVERIFIED WIP` watermark,
-builder name, contract version, and capture time. It can show incomplete,
-incorrect, unsupported, or broken output. It is observation only and provides no
-approve, download, publish, or deploy control.
+The visual pane shows the actual builder workspace directly — no
+`UNVERIFIED WIP` watermark, no controller-rendered raster proxy. The operator
+has full operational inspection and privileged recovery access.
 
-The customer cannot see:
+The operator should not see in the dashboard UI:
 
-- the Daytona sandbox ID, endpoint, raw preview port, or direct mutable preview;
-- raw stdout or stderr;
-- full shell strings, environment variables, credentials, or filesystem paths
-  outside a validated project-relative allowlist;
-- source file contents, patches, raw provider screenshots, or a durable WIP
-  artifact;
-- Fireworks reasoning, prompts, model output, or Braintrust trace IDs;
-- another project's existence or activity.
+- Fireworks reasoning, prompts, or Braintrust trace IDs (these remain
+  backend-only);
+- another project's data unless explicitly switching projects;
+- provider credentials or secrets.
 
 ### 4.4 Steering
 
-A customer can submit a change from the dashboard or reply to the correlated
+An operator can submit a change from the dashboard or reply to the correlated
 email thread. Both paths enter the same orchestration inbox.
 
 Submitting from the dashboard means only "BuildLabs received this request." The
@@ -462,7 +471,7 @@ The composer:
 
 ## 6. Display states
 
-### 6.1 Customer-facing lifecycle
+### 6.1 Admin-facing lifecycle
 
 The API retains the canonical lifecycle value and sends a separate
 customer-facing label. The frontend must not reinterpret it.
@@ -675,7 +684,12 @@ system.
   candidate IDs. Customer-specific opaque aliases are not implemented yet, so a
   future frontend must not imply those values are stable public identifiers.
 
-## 8. Customer API contract
+## 8. Admin API contract
+
+> **Note:** The route paths and type names below still use the original
+> `customer-dashboard` and `Customer*` naming from the implemented backend.
+> These will need to be renamed to `admin-dashboard` / `Admin*` in the codebase
+> to match this consolidation.
 
 The implemented backend routes are under
 `/v1/orchestration/customer-dashboard/...` and are documented first. The later
@@ -1491,12 +1505,12 @@ dashboard state.
 ### 12.1 Character
 
 The dashboard is work-focused, calm, and information-dense. It should resemble a
-well-made deployment console adapted for a non-technical customer, not a
-marketing landing page or a terminal cosplay.
+well-made deployment console for a technical operator, not a marketing landing
+page or a terminal cosplay.
 
 - Neutral white and graphite surfaces provide structure.
 - Cyan identifies live transport, green verified pass, amber attention or
-  waiting, red failure, and violet a customer-authored revision.
+  waiting, red failure, and violet an operator-authored revision.
 - Color is never the only state cue.
 - Cards use a maximum 8 px radius.
 - Page sections are unframed; only repeated builders, individual updates, and
@@ -1559,38 +1573,42 @@ Error copy should explain the next known action without inventing a cause:
 
 ## 14. Frontend component inventory
 
-The frontend target is Next.js with React, CopilotKit, and Tailwind, matching
-the platform decision in `PRODUCT_SPEC.md`. CopilotKit may coordinate the
-controlled project UI and steering experience, but it must consume the customer
-BFF contracts in section 8. It must not call the privileged operator AG-UI
-endpoint or turn the workspace into a generic chat sidebar.
+The current admin dashboard frontend is the `studio/` directory — a React +
+Vite + TypeScript single-page app. It uses Lucide icons and a graphite CSS
+custom-property design system. CopilotKit may coordinate the controlled project
+UI and steering experience, but it must consume the admin API contracts in
+section 8.
 
-Suggested React boundaries:
+**Current studio components** (already implemented):
 
-- `CustomerAppShell`
+- `IconRail` — primary navigation (Home, Studio, Runs, Projects, Delivery,
+  People, Integrations) + operator profile menu
+- `LifecycleBar` — run lifecycle stepper (Paid → Contract → Reviewing → Proof →
+  Deploy)
+- `StatusPill` — connection status (Live / Connecting / Disconnected)
+- `LayoutControl` — segmented monitor layout (Focus / 2-up / 4-up)
+- `MonitorArea` / `MonitorHeader` / `MonitorContent` — builder monitor panes
+  with functional expand/menu controls
+- `SitePreview` — raw builder preview rendering
+- `CandidateStrip` — candidate comparison cards
+- `Inspector` — tabbed inspector (Activity / Contract / Proof / Diff / Tree)
+- `AssistantBar` — steering/review composer
+- `NavPage` — default pages for Home / Runs / Projects / Delivery / People /
+  Integrations nav items
+- `ConnectionDialog` — backend connection settings
+
+**Target additional components:**
+
 - `ProjectSwitcher`
-- `ProjectStatusHeader`
 - `StreamFreshnessIndicator`
 - `MilestoneRail`
 - `CurrentVersionSummary`
-- `PrimaryCustomerAction`
-- `BuilderGrid`
-- `BuilderLane`
-- `UnverifiedWipViewport`
-- `WipRenderState`
-- `BuilderActivityTimeline`
-- `BuilderOutcome`
-- `ContractSummary`
-- `ContractVersionPicker`
-- `RequirementGroup`
 - `ProofMatrix`
 - `ProofCheckDetail`
 - `FrozenPreviewPanel`
 - `ProductionReleasePanel`
 - `UpdatesTimeline`
-- `SteeringComposer`
 - `SteeringReceipt`
-- `MagicLinkRequestForm`
 - `SessionMenu`
 - `ConnectionRecoveryBanner`
 
@@ -1608,7 +1626,7 @@ connection pressure.
 
 ## 15. Telemetry
 
-Customer dashboard telemetry must be content-free.
+Admin dashboard telemetry must be content-free.
 
 Allowed:
 

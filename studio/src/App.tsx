@@ -19,7 +19,6 @@ import {
   Gauge,
   Grid2X2,
   Home,
-  Inbox,
   ListChecks,
   Maximize2,
   Menu,
@@ -32,14 +31,14 @@ import {
   Play,
   PlugZap,
   Plus,
-  RefreshCw,
   Search,
   Send,
-  Settings2,
   ShieldCheck,
   Sparkles,
   TerminalSquare,
   TestTube2,
+  Unplug,
+  User,
   Users,
   X,
 } from "lucide-react";
@@ -55,7 +54,6 @@ import {
   loadConnection,
   loadStudioRuns,
   loadStudioSelection,
-  saveConnection,
   StudioApiError,
 } from "./api";
 import { demoRuns, demoSelection } from "./demo";
@@ -63,6 +61,7 @@ import type {
   EvidenceReceipt,
   RunEvent,
   RunStage,
+  RunStatus,
   StudioConnection,
   StudioRun,
   StudioSelection,
@@ -72,6 +71,14 @@ type DataMode = "connecting" | "live" | "demo";
 type LayoutMode = "focus" | "two" | "four";
 type InspectorTab = "activity" | "contract" | "proof" | "diff" | "tree";
 type MonitorTab = "preview" | "code" | "diff" | "terminal" | "components";
+type NavView =
+  | "home"
+  | "studio"
+  | "runs"
+  | "projects"
+  | "delivery"
+  | "people"
+  | "integrations";
 
 const stageOrder: RunStage[] = [
   "queued",
@@ -108,8 +115,7 @@ const monitorTabs: Array<{
 ];
 
 export function App() {
-  const [connection, setConnection] =
-    useState<StudioConnection>(loadConnection);
+  const [connection] = useState<StudioConnection>(loadConnection);
   const [mode, setMode] = useState<DataMode>("connecting");
   const [runs, setRuns] = useState<StudioRun[]>(demoRuns);
   const [selectedId, setSelectedId] = useState(demoRuns[1]!.run.id);
@@ -123,13 +129,34 @@ export function App() {
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("activity");
   const [monitorTab, setMonitorTab] = useState<MonitorTab>("preview");
   const [paused, setPaused] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [queueOpen, setQueueOpen] = useState(false);
+  const [navView, setNavView] = useState<NavView>("studio");
+  const [profileOpen, setProfileOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [reviewDraft, setReviewDraft] = useState("");
+  const [toast, setToast] = useState<{
+    id: number;
+    icon: "search" | "bell" | "contract" | "evidence";
+    title: string;
+    body: string;
+  } | null>(null);
 
   const selectedRun =
     runs.find((item) => item.run.id === selectedId) ?? runs[0] ?? demoRuns[0]!;
+
+  const showToast = useCallback(
+    (
+      icon: "search" | "bell" | "contract" | "evidence",
+      title: string,
+      body: string,
+    ) => {
+      const id = Date.now();
+      setToast({ id, icon, title, body });
+      window.setTimeout(() => {
+        setToast((current) => (current && current.id === id ? null : current));
+      }, 3200);
+    },
+    [],
+  );
 
   const refreshRuns = useCallback(
     async (signal?: AbortSignal) => {
@@ -139,7 +166,7 @@ export function App() {
           setMode("demo");
           setRuns(demoRuns);
           setConnectionMessage(
-            "Backend connected; no build runs yet. Showing labeled demo candidates.",
+            "Backend connected; no build runs yet. Waiting for work to arrive.",
           );
           return;
         }
@@ -159,8 +186,8 @@ export function App() {
         setRuns(demoRuns);
         setConnectionMessage(
           error instanceof StudioApiError && error.status === 401
-            ? "Backend token required. Demo data is active."
-            : "Backend unavailable. Demo data is active.",
+            ? "Backend token required. Disconnected."
+            : "Backend unavailable. Disconnected.",
         );
       }
     },
@@ -216,14 +243,6 @@ export function App() {
     (item) => item.run.status === "running",
   ).length;
 
-  const commitConnection = (next: StudioConnection) => {
-    saveConnection(next);
-    setConnection(next);
-    setMode("connecting");
-    setConnectionMessage("Connecting to the BuildLabs backend…");
-    setSettingsOpen(false);
-  };
-
   const requestReview = () => {
     const normalized = draft.trim();
     if (!normalized) {
@@ -236,23 +255,37 @@ export function App() {
   return (
     <div className="app-shell">
       <IconRail
-        queueOpen={queueOpen}
-        onQueueToggle={() => setQueueOpen((value) => !value)}
-        onSettings={() => setSettingsOpen(true)}
+        view={navView}
+        onViewChange={setNavView}
+        profileOpen={profileOpen}
+        onProfileToggle={() => setProfileOpen((value) => !value)}
+        onProfileClose={() => setProfileOpen(false)}
       />
 
       <header className="topbar">
         <div className="topbar-project">
-          <span className="studio-label">Studio</span>
+          <span className="studio-label">Admin Studio</span>
           <span className="topbar-divider" />
           <button className="project-switcher" type="button">
+            <User size={15} className="project-icon" />
             {projectName}
             <ChevronDown size={14} />
           </button>
         </div>
         <LifecycleBar run={selectedRun} />
         <div className="topbar-actions">
-          <button className="icon-button" type="button" aria-label="Search">
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Search"
+            onClick={() =>
+              showToast(
+                "search",
+                "Search",
+                "Search across runs, projects, and evidence is not connected to live data yet.",
+              )
+            }
+          >
             <Search size={18} />
           </button>
           <span className="slot-count">
@@ -262,150 +295,190 @@ export function App() {
             className="icon-button"
             type="button"
             aria-label="Notifications"
+            onClick={() =>
+              showToast(
+                "bell",
+                "No new notifications",
+                "Run status changes and proven-candidate alerts will appear here once the backend is connected.",
+              )
+            }
           >
             <Bell size={18} />
-          </button>
-          <button
-            className="icon-button"
-            type="button"
-            aria-label="Open connection settings"
-            onClick={() => setSettingsOpen(true)}
-          >
-            <Settings2 size={18} />
           </button>
         </div>
       </header>
 
-      <main className="studio">
-        <section className="studio-toolbar">
-          <div>
-            <strong>
-              Run {String(selectedRun.run.slotId ?? 1).padStart(2, "0")}
-            </strong>
-            <span className="muted-dot">•</span>
-            <span>{timeAgo(selectedRun.run.createdAt)}</span>
-            <StatusPill mode={mode} message={connectionMessage} />
-          </div>
-          <LayoutControl value={layout} onChange={setLayout} />
-          <div className="toolbar-end">
-            <button
-              className="quiet-button"
-              type="button"
-              onClick={() => setPaused((value) => !value)}
-            >
-              {paused ? <Play size={14} /> : <Pause size={14} />}
-              {paused ? "Resume live updates" : "Pause live updates"}
-            </button>
-            <button
-              className="secondary-button"
-              type="button"
-              onClick={() => setInspectorTab("proof")}
-            >
-              <ShieldCheck size={15} />
-              Open evidence
-            </button>
-          </div>
-        </section>
-
-        <div className="studio-grid">
-          <section className="workbench">
-            <MonitorArea
-              layout={layout}
-              runs={projectRuns}
-              selected={selectedRun}
-              selection={selection}
-              mode={mode}
-              monitorTab={monitorTab}
-              onSelect={(run) => setSelectedId(run.run.id)}
-              onTabChange={setMonitorTab}
-            />
-            <MonitorTabs
-              value={monitorTab}
-              onChange={setMonitorTab}
-              previewUrl={selection.preview?.url}
-            />
-            <CandidateStrip
-              runs={projectRuns}
-              selectedId={selectedRun.run.id}
-              mode={mode}
-              onSelect={(run) => {
-                setSelectedId(run.run.id);
-                setLayout("focus");
-              }}
-            />
+      {navView === "studio" ? (
+        <main className="studio">
+          <section className="studio-toolbar">
+            <div>
+              <strong>
+                Run {String(selectedRun.run.slotId ?? 1).padStart(2, "0")}
+              </strong>
+              <span className="muted-dot">•</span>
+              <span>{timeAgo(selectedRun.run.createdAt)}</span>
+              <StatusPill mode={mode} message={connectionMessage} />
+            </div>
+            <LayoutControl value={layout} onChange={setLayout} />
+            <div className="toolbar-end">
+              <button
+                className="quiet-button"
+                type="button"
+                onClick={() => setPaused((value) => !value)}
+              >
+                {paused ? <Play size={14} /> : <Pause size={14} />}
+                {paused ? "Resume live updates" : "Pause live updates"}
+              </button>
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => setInspectorTab("proof")}
+              >
+                <ShieldCheck size={15} />
+                Open evidence
+              </button>
+            </div>
           </section>
 
-          <Inspector
-            activeTab={inspectorTab}
-            onTabChange={setInspectorTab}
-            selection={selection}
-            allRuns={projectRuns}
-            mode={mode}
-          />
-        </div>
-      </main>
+          <div className="studio-grid">
+            <section className="workbench">
+              <MonitorArea
+                layout={layout}
+                runs={projectRuns}
+                selected={selectedRun}
+                selection={selection}
+                mode={mode}
+                monitorTab={monitorTab}
+                onSelect={(run) => setSelectedId(run.run.id)}
+                onTabChange={setMonitorTab}
+                onExpand={() =>
+                  setLayout(layout === "focus" ? "four" : "focus")
+                }
+              />
+              <MonitorTabs
+                value={monitorTab}
+                onChange={setMonitorTab}
+                previewUrl={selection.preview?.url}
+              />
+              <CandidateStrip
+                runs={projectRuns}
+                selectedId={selectedRun.run.id}
+                mode={mode}
+                onSelect={(run) => {
+                  setSelectedId(run.run.id);
+                  setLayout("focus");
+                }}
+              />
+            </section>
 
-      <AssistantBar
-        value={draft}
-        onChange={setDraft}
-        onSubmit={requestReview}
-        reviewDraft={reviewDraft}
-        onClearReview={() => setReviewDraft("")}
-      />
-
-      <QueueDrawer
-        open={queueOpen}
-        runs={runs}
-        onClose={() => setQueueOpen(false)}
-        onSelect={(run) => {
-          setSelectedId(run.run.id);
-          setQueueOpen(false);
-        }}
-      />
-
-      {settingsOpen ? (
-        <ConnectionDialog
-          connection={connection}
-          message={connectionMessage}
-          onClose={() => setSettingsOpen(false)}
-          onSave={commitConnection}
+            <Inspector
+              activeTab={inspectorTab}
+              onTabChange={setInspectorTab}
+              selection={selection}
+              allRuns={projectRuns}
+              mode={mode}
+              onNotice={showToast}
+            />
+          </div>
+        </main>
+      ) : (
+        <NavPage
+          view={navView}
+          runs={runs}
+          mode={mode}
+          onSelectRun={(run) => {
+            setSelectedId(run.run.id);
+            setNavView("studio");
+          }}
         />
+      )}
+
+      {navView === "studio" ? (
+        <AssistantBar
+          value={draft}
+          onChange={setDraft}
+          onSubmit={requestReview}
+          reviewDraft={reviewDraft}
+          onClearReview={() => setReviewDraft("")}
+        />
+      ) : (
+        <div className="assistant-spacer" />
+      )}
+      {toast ? (
+        <div className="toast" role="status" key={toast.id}>
+          <span className="toast-icon">
+            {toast.icon === "search" ? (
+              <Search size={15} />
+            ) : toast.icon === "bell" ? (
+              <Bell size={15} />
+            ) : toast.icon === "contract" ? (
+              <FileText size={15} />
+            ) : (
+              <ShieldCheck size={15} />
+            )}
+          </span>
+          <div className="toast-body">
+            <strong>{toast.title}</strong>
+            <span>{toast.body}</span>
+          </div>
+          <button
+            type="button"
+            aria-label="Dismiss"
+            onClick={() => setToast(null)}
+          >
+            <X size={14} />
+          </button>
+        </div>
       ) : null}
     </div>
   );
 }
 
 function IconRail({
-  queueOpen,
-  onQueueToggle,
-  onSettings,
+  view,
+  onViewChange,
+  profileOpen,
+  onProfileToggle,
+  onProfileClose,
 }: {
-  queueOpen: boolean;
-  onQueueToggle: () => void;
-  onSettings: () => void;
+  view: NavView;
+  onViewChange: (view: NavView) => void;
+  profileOpen: boolean;
+  onProfileToggle: () => void;
+  onProfileClose: () => void;
 }) {
-  const navItems = [
-    { label: "Home", icon: Home },
-    { label: "Studio", icon: Monitor, active: true },
-    { label: "Runs", icon: ListChecks },
-    { label: "Projects", icon: Folder },
-    { label: "Delivery", icon: PanelsTopLeft },
-    { label: "People", icon: Users },
-    { label: "Integrations", icon: PlugZap },
+  const navItems: Array<{
+    id: NavView;
+    label: string;
+    icon: ComponentType<{ size?: number; strokeWidth?: number }>;
+  }> = [
+    { id: "home", label: "Home", icon: Home },
+    { id: "studio", label: "Studio", icon: Monitor },
+    { id: "runs", label: "Runs", icon: ListChecks },
+    { id: "projects", label: "Projects", icon: Folder },
+    { id: "delivery", label: "Delivery", icon: PanelsTopLeft },
+    { id: "people", label: "People", icon: Users },
+    { id: "integrations", label: "Integrations", icon: PlugZap },
   ];
   return (
     <nav className="icon-rail" aria-label="Primary navigation">
       <div className="brand-mark" aria-label="BuildLabs">
-        <span>B</span>
+        <img
+          src={`${import.meta.env.BASE_URL}buildlabs-logo.png`}
+          alt=""
+          aria-hidden="true"
+        />
       </div>
       <div className="rail-items">
-        {navItems.map(({ label, icon: Icon, active }) => (
+        {navItems.map(({ id, label, icon: Icon }) => (
           <button
-            className={`rail-button ${active ? "active" : ""}`}
+            className={`rail-button ${view === id ? "active" : ""}`}
             type="button"
-            key={label}
+            key={id}
             aria-label={label}
+            aria-current={view === id ? "page" : undefined}
             title={label}
+            onClick={() => onViewChange(id)}
           >
             <Icon size={19} strokeWidth={1.7} />
           </button>
@@ -413,26 +486,37 @@ function IconRail({
       </div>
       <div className="rail-bottom">
         <button
-          className={`rail-button ${queueOpen ? "active" : ""}`}
+          className="avatar"
           type="button"
-          aria-label="Open queue"
-          title="Queue"
-          onClick={onQueueToggle}
+          aria-label="Operator profile"
+          aria-expanded={profileOpen}
+          onClick={onProfileToggle}
         >
-          <Inbox size={19} />
-        </button>
-        <button
-          className="rail-button"
-          type="button"
-          aria-label="Settings"
-          title="Settings"
-          onClick={onSettings}
-        >
-          <Settings2 size={19} />
-        </button>
-        <button className="avatar" type="button" aria-label="Operator profile">
           JM
         </button>
+        {profileOpen ? (
+          <>
+            <button
+              className="profile-backdrop"
+              type="button"
+              aria-label="Close profile menu"
+              onClick={onProfileClose}
+            />
+            <div className="profile-menu" role="menu">
+              <div className="profile-head">
+                <span className="avatar static">JM</span>
+                <div>
+                  <strong>Jordan Mills</strong>
+                  <small>Operator</small>
+                </div>
+              </div>
+              <button type="button" role="menuitem" onClick={onProfileClose}>
+                <ExternalLink size={15} />
+                Sign out
+              </button>
+            </div>
+          </>
+        ) : null}
       </div>
     </nav>
   );
@@ -459,19 +543,31 @@ function LifecycleBar({ run }: { run: StudioRun }) {
   ];
   return (
     <div className="lifecycle" aria-label="Run lifecycle">
-      {items.map((item, index) => (
-        <div className="lifecycle-item" key={`${item.label}-${index}`}>
-          <span
-            className={`lifecycle-label ${
-              item.complete ? "complete" : item.active ? "active" : ""
+      <ol className="lifecycle-track">
+        {items.map((item, index) => (
+          <li
+            className={`lifecycle-step ${
+              item.complete ? "complete" : item.active ? "active" : "pending"
             }`}
+            key={`${item.label}-${index}`}
           >
-            {item.label}
-            {item.complete ? <Check size={13} /> : null}
-          </span>
-          {index < items.length - 1 ? <ChevronRight size={15} /> : null}
-        </div>
-      ))}
+            <span className="lifecycle-dot">
+              {item.complete ? (
+                <Check size={11} strokeWidth={2.5} />
+              ) : item.active ? (
+                <span className="lifecycle-pulse" />
+              ) : null}
+            </span>
+            <span className="lifecycle-name">{item.label}</span>
+            {index < items.length - 1 ? (
+              <span
+                className={`lifecycle-link ${item.complete ? "complete" : ""}`}
+                aria-hidden
+              />
+            ) : null}
+          </li>
+        ))}
+      </ol>
       <span className="sr-only">Current stage index {currentIndex}</span>
     </div>
   );
@@ -481,7 +577,11 @@ function StatusPill({ mode, message }: { mode: DataMode; message: string }) {
   return (
     <button className={`connection-pill ${mode}`} type="button" title={message}>
       <span />
-      {mode === "live" ? "Live" : mode === "connecting" ? "Connecting" : "Demo"}
+      {mode === "live"
+        ? "Live"
+        : mode === "connecting"
+          ? "Connecting"
+          : "Disconnected"}
     </button>
   );
 }
@@ -535,6 +635,7 @@ function MonitorArea({
   monitorTab,
   onSelect,
   onTabChange,
+  onExpand,
 }: {
   layout: LayoutMode;
   runs: StudioRun[];
@@ -544,6 +645,7 @@ function MonitorArea({
   monitorTab: MonitorTab;
   onSelect: (run: StudioRun) => void;
   onTabChange: (tab: MonitorTab) => void;
+  onExpand: () => void;
 }) {
   const count = layout === "focus" ? 1 : layout === "two" ? 2 : 4;
   const visible = [selected, ...runs.filter((run) => run !== selected)].slice(
@@ -566,13 +668,18 @@ function MonitorArea({
         >
           <MonitorHeader
             run={run}
-            mode={mode}
             focused={layout === "focus"}
+            monitorTab={monitorTab}
             onTabChange={onTabChange}
+            onExpand={onExpand}
           />
           <div className="monitor-content">
             {layout !== "focus" && index > 0 ? (
-              <SitePreview variant={index} compact />
+              mode === "demo" ? (
+                <DisconnectedState />
+              ) : (
+                <SitePreview variant={index} compact />
+              )
             ) : (
               <MonitorContent
                 tab={monitorTab}
@@ -589,16 +696,19 @@ function MonitorArea({
 
 function MonitorHeader({
   run,
-  mode,
   focused,
+  monitorTab,
   onTabChange,
+  onExpand,
 }: {
   run: StudioRun;
-  mode: DataMode;
   focused: boolean;
+  monitorTab: MonitorTab;
   onTabChange: (tab: MonitorTab) => void;
+  onExpand: () => void;
 }) {
   const label = candidateLabel(run);
+  const [menuOpen, setMenuOpen] = useState(false);
   return (
     <header className="monitor-header">
       <div className="monitor-title">
@@ -618,14 +728,13 @@ function MonitorHeader({
         <span className={`run-state ${run.run.status}`}>
           {titleCase(run.run.stage)}
         </span>
-        {mode === "demo" ? <span className="demo-chip">Sample</span> : null}
       </div>
       <div className="monitor-actions">
         <button
           className="icon-button small"
           type="button"
-          aria-label="Inspect preview"
-          title="Inspect preview"
+          aria-label="Inspect components"
+          title="Inspect components"
           onClick={() => onTabChange("components")}
         >
           <CircleDot size={15} />
@@ -633,19 +742,53 @@ function MonitorHeader({
         <button
           className="icon-button small"
           type="button"
-          aria-label={focused ? "Expand monitor" : "Focus monitor"}
-          title={focused ? "Expand monitor" : "Focus monitor"}
+          aria-label={focused ? "Expand to grid" : "Focus monitor"}
+          title={focused ? "Expand to grid" : "Focus monitor"}
+          onClick={onExpand}
         >
           <Maximize2 size={15} />
         </button>
-        <button
-          className="icon-button small"
-          type="button"
-          aria-label="Monitor menu"
-          title="Monitor menu"
-        >
-          <Menu size={16} />
-        </button>
+        <div className="monitor-menu-wrap">
+          <button
+            className="icon-button small"
+            type="button"
+            aria-label="Monitor view menu"
+            title="Monitor view menu"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((value) => !value)}
+          >
+            <Menu size={16} />
+          </button>
+          {menuOpen ? (
+            <>
+              <button
+                className="monitor-menu-backdrop"
+                type="button"
+                aria-label="Close monitor menu"
+                onClick={() => setMenuOpen(false)}
+              />
+              <div className="monitor-menu" role="menu">
+                {monitorTabs.map(({ id, label, icon: Icon }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={monitorTab === id}
+                    className={monitorTab === id ? "active" : ""}
+                    onClick={() => {
+                      onTabChange(id);
+                      setMenuOpen(false);
+                    }}
+                  >
+                    <Icon size={14} strokeWidth={1.7} />
+                    {label}
+                    {monitorTab === id ? <Check size={13} /> : null}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : null}
+        </div>
       </div>
     </header>
   );
@@ -660,6 +803,9 @@ function MonitorContent({
   selection: StudioSelection;
   mode: DataMode;
 }) {
+  if (mode === "demo") {
+    return <DisconnectedState />;
+  }
   if (tab === "preview") {
     if (selection.preview?.url) {
       return (
@@ -685,6 +831,19 @@ function MonitorContent({
     return <TerminalMonitor events={selection.events} />;
   }
   return <ComponentMonitor run={selection.run} />;
+}
+
+function DisconnectedState() {
+  return (
+    <div className="disconnected-state">
+      <Unplug size={26} />
+      <p>Disconnected</p>
+      <span>
+        The build backend is not reachable. Live monitors will appear once a
+        connection is established.
+      </span>
+    </div>
+  );
 }
 
 function SitePreview({
@@ -865,13 +1024,20 @@ function CandidateStrip({
           <button
             className={`candidate-card ${
               run.run.id === selectedId ? "selected" : ""
-            }`}
+            } ${mode === "demo" ? "disconnected" : ""}`}
             type="button"
             key={run.run.id}
             onClick={() => onSelect(run)}
           >
             <div className="candidate-thumb">
-              <SitePreview variant={index + 1} compact />
+              {mode === "demo" ? (
+                <span className="thumb-disconnected">
+                  <Unplug size={18} />
+                  Offline
+                </span>
+              ) : (
+                <SitePreview variant={index + 1} compact />
+              )}
               <Maximize2 size={14} />
             </div>
             <div className="candidate-meta">
@@ -889,7 +1055,6 @@ function CandidateStrip({
               {eventSummary(run.activity.latestEvent) ??
                 titleCase(run.assignment?.strategyLabel ?? "Waiting for work")}
             </p>
-            {mode === "demo" ? <small>Sample</small> : null}
           </button>
         ))}
       </div>
@@ -903,12 +1068,18 @@ function Inspector({
   selection,
   allRuns,
   mode,
+  onNotice,
 }: {
   activeTab: InspectorTab;
   onTabChange: (tab: InspectorTab) => void;
   selection: StudioSelection;
   allRuns: StudioRun[];
   mode: DataMode;
+  onNotice: (
+    icon: "search" | "bell" | "contract" | "evidence",
+    title: string,
+    body: string,
+  ) => void;
 }) {
   return (
     <aside className="inspector">
@@ -940,12 +1111,32 @@ function Inspector({
         {activeTab === "tree" ? <TreePanel run={selection.run} /> : null}
       </div>
       <div className="inspector-footer">
-        <button type="button">
+        <button
+          type="button"
+          onClick={() => {
+            onTabChange("contract");
+            onNotice(
+              "contract",
+              "Acceptance contract",
+              "Opening the contract panel. Requirements and verifiers are shown for the selected candidate.",
+            );
+          }}
+        >
           <FileText size={14} />
           Acceptance contract
           <ChevronRight size={14} />
         </button>
-        <button type="button">
+        <button
+          type="button"
+          onClick={() => {
+            onTabChange("proof");
+            onNotice(
+              "evidence",
+              "Immutable evidence",
+              "Opening the proof panel. Evidence receipts are shown for the selected candidate.",
+            );
+          }}
+        >
           <ShieldCheck size={14} />
           Immutable evidence
           <ChevronRight size={14} />
@@ -1487,10 +1678,6 @@ function AssistantBar({
 }) {
   return (
     <footer className="assistant-shell">
-      <button className="queue-summary" type="button">
-        Queue 10 · Attention 2
-        <ChevronDown size={14} />
-      </button>
       <div className="assistant-center">
         {reviewDraft ? (
           <div className="review-banner">
@@ -1506,7 +1693,9 @@ function AssistantBar({
           </div>
         ) : null}
         <div className="assistant-input">
-          <Sparkles size={18} />
+          <span className="assistant-spark">
+            <Sparkles size={16} />
+          </span>
           <textarea
             rows={1}
             value={value}
@@ -1520,8 +1709,12 @@ function AssistantBar({
             placeholder="Inspect this run, compare candidates, or draft a verified change brief…"
             aria-label="Draft a reviewed operator action"
           />
-          <button className="icon-button" type="button" aria-label="Use voice">
-            <Mic size={18} />
+          <button
+            className="assistant-voice"
+            type="button"
+            aria-label="Use voice"
+          >
+            <Mic size={17} />
           </button>
           <button
             className="review-button"
@@ -1538,141 +1731,7 @@ function AssistantBar({
           Drafts do not reach the build swarm until an admin approves them.
         </p>
       </div>
-      <div className="assistant-spacer" />
     </footer>
-  );
-}
-
-function QueueDrawer({
-  open,
-  runs,
-  onClose,
-  onSelect,
-}: {
-  open: boolean;
-  runs: StudioRun[];
-  onClose: () => void;
-  onSelect: (run: StudioRun) => void;
-}) {
-  if (!open) {
-    return null;
-  }
-  return (
-    <>
-      <button
-        className="drawer-backdrop"
-        type="button"
-        aria-label="Close queue"
-        onClick={onClose}
-      />
-      <aside className="queue-drawer">
-        <header>
-          <div>
-            <h2>Run queue</h2>
-            <p>{runs.length} visible candidates</p>
-          </div>
-          <button className="icon-button" type="button" onClick={onClose}>
-            <X size={17} />
-          </button>
-        </header>
-        <div className="queue-list">
-          {runs.map((run) => (
-            <button
-              type="button"
-              key={run.run.id}
-              onClick={() => onSelect(run)}
-            >
-              <span className={`queue-state ${run.run.status}`} />
-              <div>
-                <strong>{formatProjectName(run.run.projectId)}</strong>
-                <small>
-                  {candidateLabel(run)} · {titleCase(run.run.stage)}
-                </small>
-              </div>
-              <ChevronRight size={15} />
-            </button>
-          ))}
-        </div>
-      </aside>
-    </>
-  );
-}
-
-function ConnectionDialog({
-  connection,
-  message,
-  onClose,
-  onSave,
-}: {
-  connection: StudioConnection;
-  message: string;
-  onClose: () => void;
-  onSave: (connection: StudioConnection) => void;
-}) {
-  const [draft, setDraft] = useState(connection);
-  return (
-    <div className="dialog-backdrop" role="presentation" onMouseDown={onClose}>
-      <section
-        className="connection-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="connection-title"
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <header>
-          <div>
-            <h2 id="connection-title">Backend connection</h2>
-            <p>Stored only in this browser tab.</p>
-          </div>
-          <button className="icon-button" type="button" onClick={onClose}>
-            <X size={17} />
-          </button>
-        </header>
-        <div className="dialog-status">
-          <Activity size={15} />
-          {message}
-        </div>
-        <label>
-          Backend URL
-          <input
-            value={draft.baseUrl}
-            onChange={(event) =>
-              setDraft((value) => ({ ...value, baseUrl: event.target.value }))
-            }
-            placeholder="Same origin (recommended)"
-          />
-          <small>Leave empty when the studio is served by BuildLabs.</small>
-        </label>
-        <label>
-          Internal bearer token
-          <input
-            type="password"
-            value={draft.token}
-            onChange={(event) =>
-              setDraft((value) => ({ ...value, token: event.target.value }))
-            }
-            placeholder="Required when BUILDLABS_INTERNAL_TOKEN is set"
-            autoComplete="off"
-          />
-          <small>
-            The token is kept in sessionStorage, never localStorage.
-          </small>
-        </label>
-        <footer>
-          <button className="quiet-button" type="button" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            className="primary-button"
-            type="button"
-            onClick={() => onSave(draft)}
-          >
-            <RefreshCw size={14} />
-            Connect
-          </button>
-        </footer>
-      </section>
-    </div>
   );
 }
 
@@ -1687,6 +1746,292 @@ function EmptyInspector({
     <div className="empty-inspector">
       <Icon size={22} />
       <p>{text}</p>
+    </div>
+  );
+}
+
+const navPageMeta: Record<
+  NavView,
+  { title: string; blurb: string; icon: ComponentType<{ size?: number }> }
+> = {
+  home: {
+    title: "Overview",
+    blurb: "A snapshot of active builds, slots, and recent proof activity.",
+    icon: Home,
+  },
+  runs: {
+    title: "Runs",
+    blurb: "Every visible build run across projects. Open one to inspect it.",
+    icon: ListChecks,
+  },
+  projects: {
+    title: "Projects",
+    blurb: "Customer workspaces grouped by project.",
+    icon: Folder,
+  },
+  delivery: {
+    title: "Delivery",
+    blurb:
+      "Frozen proven previews, deployed artifacts, and delivery records live here once a candidate passes the proof gate.",
+    icon: PanelsTopLeft,
+  },
+  people: {
+    title: "People",
+    blurb: "Customer and internal operator records.",
+    icon: Users,
+  },
+  integrations: {
+    title: "Integrations",
+    blurb:
+      "Provider configuration and health for Daytona, Fireworks, Braintrust, ElevenLabs, CopilotKit, and CodeRabbit.",
+    icon: PlugZap,
+  },
+  studio: { title: "Studio", blurb: "", icon: Monitor },
+};
+
+function NavPage({
+  view,
+  runs,
+  mode,
+  onSelectRun,
+}: {
+  view: NavView;
+  runs: StudioRun[];
+  mode: DataMode;
+  onSelectRun: (run: StudioRun) => void;
+}) {
+  const meta = navPageMeta[view];
+  const Icon = meta.icon;
+  if (view === "home") {
+    const active = runs.filter((r) => r.run.status === "running").length;
+    const proven = runs.filter((r) => r.run.status === "passed").length;
+    const failed = runs.filter(
+      (r) => r.run.status === "failed" || r.run.status === "rejected",
+    ).length;
+    return (
+      <main className="nav-page">
+        <NavPageHeader title={meta.title} blurb={meta.blurb} icon={Icon} />
+        <div className="nav-card-grid">
+          <NavStat
+            icon={Activity}
+            label="Active runs"
+            value={active}
+            tone="active"
+          />
+          <NavStat
+            icon={CheckCircle2}
+            label="Proven"
+            value={proven}
+            tone="good"
+          />
+          <NavStat icon={X} label="Failed" value={failed} tone="bad" />
+          <NavStat
+            icon={Boxes}
+            label="Slots in use"
+            value={`${runs.length} / 4`}
+            tone="neutral"
+          />
+        </div>
+        <RunTable
+          runs={runs.slice(0, 6)}
+          onSelect={onSelectRun}
+          mode={mode}
+          empty="No build runs are visible right now."
+        />
+      </main>
+    );
+  }
+  if (view === "runs") {
+    return (
+      <main className="nav-page">
+        <NavPageHeader title={meta.title} blurb={meta.blurb} icon={Icon} />
+        <RunTable
+          runs={runs}
+          onSelect={onSelectRun}
+          mode={mode}
+          empty="No build runs are visible right now."
+        />
+      </main>
+    );
+  }
+  if (view === "projects") {
+    const projects = new Map<string, StudioRun[]>();
+    for (const run of runs) {
+      const list = projects.get(run.run.projectId) ?? [];
+      list.push(run);
+      projects.set(run.run.projectId, list);
+    }
+    return (
+      <main className="nav-page">
+        <NavPageHeader title={meta.title} blurb={meta.blurb} icon={Icon} />
+        <div className="nav-card-grid">
+          {Array.from(projects.entries()).map(([projectId, projectRuns]) => (
+            <button
+              key={projectId}
+              type="button"
+              className="nav-card project-card"
+              onClick={() => {
+                const first = projectRuns[0];
+                if (first) {
+                  onSelectRun(first);
+                }
+              }}
+            >
+              <Folder size={18} />
+              <div>
+                <strong>{formatProjectName(projectId)}</strong>
+                <small>
+                  {projectRuns.length} candidate
+                  {projectRuns.length === 1 ? "" : "s"}
+                </small>
+              </div>
+              <ChevronRight size={15} />
+            </button>
+          ))}
+        </div>
+      </main>
+    );
+  }
+  return (
+    <main className="nav-page">
+      <NavPageHeader title={meta.title} blurb={meta.blurb} icon={Icon} />
+      <div className="nav-placeholder">
+        <Icon size={26} />
+        <p>This area is part of the studio information architecture.</p>
+        <span>It is reserved and not yet wired to live data.</span>
+      </div>
+    </main>
+  );
+}
+
+function NavPageHeader({
+  title,
+  blurb,
+  icon: Icon,
+}: {
+  title: string;
+  blurb: string;
+  icon: ComponentType<{ size?: number }>;
+}) {
+  return (
+    <header className="nav-page-header">
+      <span className="nav-page-icon">
+        <Icon size={18} />
+      </span>
+      <div>
+        <h1>{title}</h1>
+        <p>{blurb}</p>
+      </div>
+    </header>
+  );
+}
+
+function NavStat({
+  icon: Icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: ComponentType<{ size?: number }>;
+  label: string;
+  value: number | string;
+  tone: "active" | "good" | "bad" | "neutral" | "warn";
+}) {
+  return (
+    <div className={`nav-stat ${tone}`}>
+      <div className="nav-stat-top">
+        <span className="nav-stat-icon">
+          <Icon size={15} />
+        </span>
+        <strong>{value}</strong>
+      </div>
+      <span>{label}</span>
+    </div>
+  );
+}
+
+const statusLabels: Record<RunStatus, string> = {
+  queued: "Queued",
+  running: "Running",
+  passed: "Passed",
+  rejected: "Rejected",
+  failed: "Failed",
+  cancelled: "Cancelled",
+};
+
+function RunTable({
+  runs,
+  onSelect,
+  empty,
+}: {
+  runs: StudioRun[];
+  onSelect: (run: StudioRun) => void;
+  mode: DataMode;
+  empty: string;
+}) {
+  if (runs.length === 0) {
+    return (
+      <div className="nav-placeholder">
+        <ListChecks size={26} />
+        <p>{empty}</p>
+        <span>Runs appear here once the backend reports them.</span>
+      </div>
+    );
+  }
+  return (
+    <div className="run-table">
+      <div className="run-table-head">
+        <span>Project</span>
+        <span>Candidate</span>
+        <span>Status</span>
+        <span>Stage</span>
+        <span>Proof</span>
+        <span>Updated</span>
+      </div>
+      {runs.map((run) => {
+        const proofTotal = run.proof.total;
+        const proofPassed = run.proof.passed;
+        return (
+          <button
+            key={run.run.id}
+            type="button"
+            className="run-table-row"
+            onClick={() => onSelect(run)}
+          >
+            <span className="run-table-project">
+              <span className={`run-status-dot ${run.run.status}`} />
+              {formatProjectName(run.run.projectId)}
+            </span>
+            <span className="run-table-candidate">{candidateLabel(run)}</span>
+            <span>
+              <span className={`run-badge run-badge-${run.run.status}`}>
+                {statusLabels[run.run.status]}
+              </span>
+            </span>
+            <span className="run-table-stage">{titleCase(run.run.stage)}</span>
+            <span className="run-table-proof">
+              {proofTotal > 0 ? (
+                <>
+                  <span className="run-proof-bar">
+                    <span
+                      className="run-proof-fill"
+                      style={{
+                        width: `${(proofPassed / proofTotal) * 100}%`,
+                      }}
+                    />
+                  </span>
+                  <small>
+                    {proofPassed}/{proofTotal}
+                  </small>
+                </>
+              ) : (
+                <small className="run-proof-pending">—</small>
+              )}
+            </span>
+            <span className="run-table-time">{timeAgo(run.run.updatedAt)}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }

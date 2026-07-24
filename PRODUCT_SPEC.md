@@ -561,7 +561,7 @@ revocation/logout/renewal, or provider-backed end-to-end verification.
   paid-scope policy, and the complete proof gate exactly like authenticated email
   steering. The UI never sends commands directly to Fireworks or Daytona.
 - The implementation contract for this surface lives in
-  [`CUSTOMER_DASHBOARD_SPEC.md`](./CUSTOMER_DASHBOARD_SPEC.md).
+  [`ADMIN_DASHBOARD_SPEC.md`](./ADMIN_DASHBOARD_SPEC.md).
 
 ### 3.6 Acceptance Contract
 
