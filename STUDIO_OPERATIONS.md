@@ -33,6 +33,16 @@ Vite proxies `/v1`, `/health`, and `/ready` to `http://127.0.0.1:3000`. If the
 build backend is not running, the page shows an explicit unavailable state and
 does not render candidate or proof data.
 
+To load fictional local projects for visual Studio development, add the explicit
+development-only query parameter:
+
+```text
+http://127.0.0.1:5173/studio/?fixture=1
+```
+
+Fixture mode is compiled out of production builds. It never contacts the backend
+and shows no provider, payment, delivery, or proof receipts.
+
 Start the build backend in a second terminal:
 
 ```powershell

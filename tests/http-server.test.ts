@@ -404,6 +404,7 @@ describe("HTTP server", () => {
     expect(probeBody.checkedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
     expect(probeBody).toMatchObject({
       status: "ready",
+      component: "build-agent-backend",
       providers: {
         daytona: "healthy",
         fireworks: "healthy",
@@ -411,6 +412,9 @@ describe("HTTP server", () => {
         coderabbit: "healthy",
         copilotkit: "configured",
         elevenlabs: "healthy",
+      },
+      configuration: {
+        daytonaSnapshot: "buildlabs-dind-browser-v2",
       },
     });
   });

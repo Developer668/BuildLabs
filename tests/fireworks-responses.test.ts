@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import sharp from "sharp";
 import { z } from "zod";
 
 import {
@@ -384,14 +385,38 @@ describe("Fireworks Responses capability probe", () => {
       }),
     ).rejects.toMatchObject({ code: "capability_mismatch" });
 
+    const visionRequestBodies: Record<string, unknown>[] = [];
     const ignoredVision = new FireworksResponsesCapabilityProbe({
       apiKey: "test",
-      fetchImpl: () =>
-        Promise.resolve(
+      fetchImpl: (_input, init) => {
+        if (typeof init?.body === "string") {
+          visionRequestBodies.push(
+            JSON.parse(init.body) as Record<string, unknown>,
+          );
+        }
+        return Promise.resolve(
           Response.json(
             completedEnvelope(
               KIMI,
               [
+                {
+                  id: "echoed-vision-input",
+                  type: "message",
+                  role: "user",
+                  content: [
+                    {
+                      type: "text",
+                      text: "Inspect both images. Report each dominant color in order.",
+                    },
+                    {
+                      type: "image_url",
+                      image_url: {
+                        url: "data:image/png;base64,provider-echo",
+                      },
+                    },
+                  ],
+                  status: "completed",
+                },
                 functionCall(
                   "buildlabs_capability_probe",
                   '{"first":"blue","second":"red"}',
@@ -400,7 +425,8 @@ describe("Fireworks Responses capability probe", () => {
               { reasoning: { content: "bounded probe" } },
             ),
           ),
-        ),
+        );
+      },
     });
     await expect(
       ignoredVision.probe(KIMI, {
@@ -413,6 +439,26 @@ describe("Fireworks Responses capability probe", () => {
         training: false,
       }),
     ).rejects.toBeInstanceOf(z.ZodError);
+
+    const input = visionRequestBodies[0]?.input as
+      | Array<{ role?: string; content?: Array<Record<string, unknown>> }>
+      | undefined;
+    const imageUrls =
+      input
+        ?.find((message) => message.role === "user")
+        ?.content?.filter((part) => part.type === "input_image")
+        .map((part) => String(part.image_url)) ?? [];
+    expect(imageUrls).toHaveLength(2);
+    for (const imageUrl of imageUrls) {
+      const encoded = imageUrl.replace(/^data:image\/png;base64,/, "");
+      await expect(
+        sharp(Buffer.from(encoded, "base64")).metadata(),
+      ).resolves.toMatchObject({
+        format: "png",
+        width: 32,
+        height: 32,
+      });
+    }
   });
 
   it("rejects a silent Chat reasoning-probe fallback", async () => {

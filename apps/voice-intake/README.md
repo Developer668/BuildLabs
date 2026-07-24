@@ -1,7 +1,8 @@
 # BuildLabs voice intake
 
-This workspace is the local operator surface and signed post-call bridge for
-BuildLabs ElevenLabs intake sessions.
+This workspace is the signed browser voice service and post-call bridge for
+BuildLabs ElevenLabs intake sessions. The customer conversation control lives
+inside the unified `apps/dashboard` project workspace.
 
 ## Boundaries
 
@@ -80,11 +81,15 @@ the raw secret. `ELEVENLABS_PRECALL_SECRET_ID` must likewise contain
 `ELEVENLABS_TOOL_BEARER_SECRET_ID`, `ELEVENLABS_PRECALL_SECRET_ID`, and
 `ELEVENLABS_WEBHOOK_ID`.
 
-`BUILDLABS_ORCHESTRATION_URL` defaults to `http://127.0.0.1:3100`. Run the
-orchestrator and Call Lab from separate terminals:
+`BUILDLABS_ORCHESTRATION_URL` defaults to `http://127.0.0.1:3100`. Set
+`VOICE_INTAKE_ALLOWED_ORIGINS` to the dashboard's exact public origin; the
+dashboard's `NEXT_PUBLIC_BUILDLABS_VOICE_INTAKE_URL` must point back to this
+service. Run the orchestrator, dashboard, and voice service from separate
+terminals:
 
 ```bash
 npm run dev:orchestration
+npm run dev:dashboard
 npm run dev:voice
 ```
 

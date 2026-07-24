@@ -119,12 +119,13 @@ const BuildBackendReadinessSchema = z
         coderabbit: z.literal("healthy"),
         braintrust: z.literal("healthy"),
       })
-      .strict(),
+      .passthrough(),
     configuration: z
       .object({
         daytonaSnapshot: z.string().min(1).max(256),
       })
       .strict(),
+    checkedAt: z.iso.datetime(),
   })
   .strict();
 
@@ -188,8 +189,8 @@ export class HttpBuildBackendAdapter implements BuildBackendPort {
 
   async health(signal?: AbortSignal): Promise<void> {
     const response = await this.#request(
-      "ready",
-      { method: "GET" },
+      "v1/integrations/probe",
+      { method: "POST" },
       signal,
       "health",
     );

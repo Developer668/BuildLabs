@@ -14,7 +14,7 @@ import Link from "next/link";
 import { SessionButton } from "./session-button";
 
 export type WorkspaceSection =
-  "overview" | "build" | "requirements" | "proof" | "updates" | "operations";
+  "overview" | "build" | "requirements" | "proof" | "updates" | "operations" | "voice";
 
 const sectionIcons = {
   overview: Gauge,
@@ -23,6 +23,7 @@ const sectionIcons = {
   proof: ShieldCheck,
   updates: MessageSquareText,
   operations: ListTree,
+  voice: MessageSquareText,
 } satisfies Record<WorkspaceSection, typeof Gauge>;
 
 export function WorkspaceShell({
@@ -54,7 +55,7 @@ export function WorkspaceShell({
   const operator = role === "Operator studio";
   const sections: WorkspaceSection[] = operator
     ? ["overview", "build", "proof", "operations", "updates"]
-    : ["overview", "build", "requirements", "proof", "updates"];
+    : ["overview", "build", "requirements", "proof", "updates", "voice"];
   const base = operator ? "/operator" : "";
   const signOutEndpoint = operator ? "/api/operator/session" : "/logout";
 

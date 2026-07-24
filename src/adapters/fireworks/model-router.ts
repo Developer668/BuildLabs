@@ -118,7 +118,7 @@ const MODEL = {
   glm5p2: "accounts/fireworks/models/glm-5p2",
   kimiK2p6: "accounts/fireworks/models/kimi-k2p6",
   kimiK2p7Code: "accounts/fireworks/models/kimi-k2p7-code",
-  minimaxM2p7: "accounts/fireworks/models/minimax-m2p7",
+  minimaxM3: "accounts/fireworks/models/minimax-m3",
 } as const;
 
 export const FIREWORKS_ROUTER_POLICY_VERSION = "buildlabs-fireworks-router-v1";
@@ -126,10 +126,10 @@ export const FIREWORKS_ROUTER_POLICY_VERSION = "buildlabs-fireworks-router-v1";
 const ROLE_POLICIES: Readonly<Record<FireworksModelRole, RolePolicy>> = {
   builder: {
     candidates: [
+      MODEL.minimaxM3,
       MODEL.kimiK2p7Code,
       MODEL.glm5p2,
       MODEL.deepseekV4Pro,
-      MODEL.minimaxM2p7,
       MODEL.kimiK2p6,
     ],
     requirements: {
@@ -539,13 +539,11 @@ export class FireworksCatalogClient implements FireworksCatalogSource {
 
 function staticMismatch(
   model: FireworksCatalogModel | undefined,
-  inferenceIds: ReadonlySet<string>,
   requirements: RoleCapabilityRequirements,
 ): string | undefined {
   if (model === undefined) return "not_in_catalog";
   if (model.state !== "READY") return "not_ready";
   if (!model.supportsServerless) return "not_serverless";
-  if (!inferenceIds.has(model.name)) return "not_in_inference_index";
   if (model.contextLength < requirements.minimumContextLength)
     return "context_too_small";
   if (requirements.tools && !model.supportsTools) return "tools_missing";
@@ -613,7 +611,6 @@ export class FireworksCapabilityRouter {
       );
       const mismatch = staticMismatch(
         model,
-        new Set(snapshot.inferenceModelIds),
         ROLE_POLICIES[role].requirements,
       );
       if (mismatch !== undefined) {
@@ -633,7 +630,7 @@ export class FireworksCapabilityRouter {
     const rejected: string[] = [];
     for (const candidateId of policy.candidates) {
       const model = modelById.get(candidateId);
-      const mismatch = staticMismatch(model, inferenceIds, policy.requirements);
+      const mismatch = staticMismatch(model, policy.requirements);
       if (mismatch !== undefined) {
         rejected.push(`${candidateId}:${mismatch}`);
         continue;
@@ -709,7 +706,14 @@ export class FireworksCapabilityRouter {
         capabilitySnapshotDigest: sha256(canonicalJson(capabilitySnapshot)),
         routerPolicyDigest: FIREWORKS_ROUTER_POLICY_DIGEST,
         fallbackReason:
-          rejected.length === 0 ? "preferred" : rejected.join(","),
+          [
+            ...rejected,
+            ...(inferenceIds.has(candidateId)
+              ? []
+              : [
+                  `${candidateId}:inference_index_advisory_miss_active_probe_passed`,
+                ]),
+          ].join(",") || "preferred",
       };
       const stored = await this.#pinStore.createIfAbsent(pin);
       if (stored.role !== role) {

@@ -49,7 +49,10 @@ describe("orchestration build and deploy adapters", () => {
     let authorization: string | undefined;
     const backend = await listenHttp((request, response) => {
       authorization = request.headers.authorization;
-      if (request.method !== "GET" || request.url !== "/internal/ready") {
+      if (
+        request.method !== "POST" ||
+        request.url !== "/internal/v1/integrations/probe"
+      ) {
         respondJson(response, 404, {});
         return;
       }
@@ -65,6 +68,7 @@ describe("orchestration build and deploy adapters", () => {
         configuration: {
           daytonaSnapshot: "buildlabs-dind-v1",
         },
+        checkedAt: "2026-07-24T12:00:00.000Z",
       });
     });
     resources.push(backend.close);

@@ -793,7 +793,7 @@ function toChatMessage(message: AgentMessage): ChatCompletionMessageParam {
           type: "function",
           function: {
             name: call.name,
-            arguments: call.argumentsJson,
+            arguments: providerSafeToolArguments(call.argumentsJson),
           },
         })),
         ...(message.reasoningContent
@@ -801,6 +801,22 @@ function toChatMessage(message: AgentMessage): ChatCompletionMessageParam {
           : {}),
       };
   }
+}
+
+function providerSafeToolArguments(argumentsJson: string): string {
+  try {
+    const parsed = JSON.parse(argumentsJson) as unknown;
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      !Array.isArray(parsed)
+    ) {
+      return argumentsJson;
+    }
+  } catch {
+    // The tool result already tells the model that its arguments were invalid.
+  }
+  return "{}";
 }
 
 function toChatTool(tool: AgentToolDefinition): ChatCompletionTool {

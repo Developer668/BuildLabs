@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { POST as createConversationSession } from "../app/api/conversation-session/route";
+import {
+  OPTIONS as conversationSessionPreflight,
+  POST as createConversationSession,
+} from "../app/api/conversation-session/route";
 import { verifyIntakeToolCapability } from "../lib/tool-capability";
 
 const ORIGIN = "https://voice.buildlabs.test";
@@ -118,6 +121,7 @@ describe("browser conversation sessions", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toContain("no-store");
+    expect(response.headers.get("access-control-allow-origin")).toBe(ORIGIN);
     expect(body.conversationId).toBe("conv_browser_session_0001");
     expect(body.reconnectAttempt).toBe(0);
     expect(body.initiation.dynamic_variables).toMatchObject({
@@ -163,6 +167,21 @@ describe("browser conversation sessions", () => {
       conversationId: body.conversationId,
       contractVersion: 0,
     });
+  });
+
+  it("permits configured dashboard origins to preflight a browser session", () => {
+    const response = conversationSessionPreflight(
+      new Request(`${ORIGIN}/api/conversation-session`, {
+        method: "OPTIONS",
+        headers: { origin: ORIGIN },
+      }),
+    );
+
+    expect(response.status).toBe(204);
+    expect(response.headers.get("access-control-allow-origin")).toBe(ORIGIN);
+    expect(response.headers.get("access-control-allow-methods")).toContain(
+      "POST",
+    );
   });
 
   it("issues a fresh provider URL for a bounded reconnect and rejects replay", async () => {

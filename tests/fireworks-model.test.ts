@@ -140,7 +140,7 @@ describe("FireworksModel", () => {
           {
             id: "call-read",
             name: "read_file",
-            argumentsJson: '{"path":"package.json"}',
+            argumentsJson: '{"path":',
           },
         ],
       },
@@ -174,10 +174,21 @@ describe("FireworksModel", () => {
     });
     expect(captured?.body.messages).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({
+        {
           role: "assistant",
+          content: null,
           reasoning_content: "private prior reasoning",
-        }),
+          tool_calls: [
+            {
+              id: "call-read",
+              type: "function",
+              function: {
+                name: "read_file",
+                arguments: "{}",
+              },
+            },
+          ],
+        },
       ]),
     );
     expect(turn).toMatchObject({

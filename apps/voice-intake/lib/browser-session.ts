@@ -251,7 +251,7 @@ function allowedOrigins(request: Request) {
   return new Set([new URL(request.url).origin]);
 }
 
-function assertOrigin(request: Request) {
+export function assertBrowserOrigin(request: Request) {
   const supplied = request.headers.get("origin");
   if (!supplied) {
     throw new BrowserSessionError(403, "origin_not_allowed");
@@ -269,6 +269,17 @@ function assertOrigin(request: Request) {
   if (!allowedOrigins(request).has(normalized)) {
     throw new BrowserSessionError(403, "origin_not_allowed");
   }
+}
+
+export function browserSessionCorsHeaders(request: Request): HeadersInit {
+  assertBrowserOrigin(request);
+  return {
+    "access-control-allow-origin": new URL(request.headers.get("origin")!).origin,
+    "access-control-allow-methods": "POST, OPTIONS",
+    "access-control-allow-headers": "content-type",
+    "access-control-max-age": "600",
+    vary: "origin",
+  };
 }
 
 async function reconnectTokenFromRequest(request: Request) {
@@ -426,7 +437,7 @@ export async function createBrowserConversationSession(
   request: Request,
   fetcher: typeof fetch = fetch,
 ): Promise<BrowserConversationSession> {
-  assertOrigin(request);
+  assertBrowserOrigin(request);
   const reconnectToken = await reconnectTokenFromRequest(request);
   const resource = configuredResource();
   const nowSeconds = Math.floor(Date.now() / 1_000);

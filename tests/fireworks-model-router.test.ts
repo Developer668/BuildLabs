@@ -21,6 +21,7 @@ import { canonicalJson, sha256 } from "../src/lib/canonical-json.js";
 
 const GLM = "accounts/fireworks/models/glm-5p2";
 const KIMI_CODE = "accounts/fireworks/models/kimi-k2p7-code";
+const MINIMAX = "accounts/fireworks/models/minimax-m3";
 
 function catalogModel(
   name: string,
@@ -139,12 +140,13 @@ describe("Fireworks capability routing", () => {
     ).toMatchObject({ contextLength: 0 });
   });
 
-  it("pins an evidenced fallback when the preferred catalog model is absent from inference", async () => {
+  it("admits a cataloged serverless model through the stronger active probe when the inference index is stale", async () => {
     const source: FireworksCatalogSource = {
       load: () =>
         Promise.resolve(
           snapshot(
             [
+              catalogModel(MINIMAX),
               catalogModel(KIMI_CODE, {
                 supportsSupervisedTraining: true,
                 supportsReinforcementTraining: true,
@@ -159,8 +161,10 @@ describe("Fireworks capability routing", () => {
 
     const pin = await router.route("builder", "a".repeat(64));
 
-    expect(pin.modelId).toBe(GLM);
-    expect(pin.fallbackReason).toContain(`${KIMI_CODE}:not_in_inference_index`);
+    expect(pin.modelId).toBe(MINIMAX);
+    expect(pin.fallbackReason).toContain(
+      `${MINIMAX}:inference_index_advisory_miss_active_probe_passed`,
+    );
     expect(pin.routerPolicyDigest).toBe(FIREWORKS_ROUTER_POLICY_DIGEST);
     expect(pin.cacheIsolationKey).toMatch(/^[a-f0-9]{64}$/u);
     expect(pin.capabilitySnapshotDigest).toBe(

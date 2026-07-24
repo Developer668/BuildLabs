@@ -23,7 +23,6 @@ import {
   Maximize2,
   Menu,
   Monitor,
-  Mountain,
   PanelLeft,
   PanelsTopLeft,
   Pause,
@@ -55,6 +54,7 @@ import {
   loadConnection,
   loadStudioRuns,
   loadStudioSelection,
+  saveConnection,
   StudioApiError,
 } from "./api";
 import type {
@@ -67,7 +67,9 @@ import type {
   StudioSelection,
 } from "./types";
 
-type DataMode = "connecting" | "live" | "unavailable";
+declare const __STUDIO_DEV_FIXTURES__: boolean;
+
+type DataMode = "connecting" | "fixture" | "live" | "unavailable";
 type LayoutMode = "focus" | "two" | "four";
 type InspectorTab = "activity" | "contract" | "proof" | "diff" | "tree";
 type MonitorTab = "preview" | "code" | "diff" | "terminal" | "components";
@@ -115,7 +117,12 @@ const monitorTabs: Array<{
 ];
 
 export function App() {
-  const [connection] = useState<StudioConnection>(loadConnection);
+  const fixturesEnabled =
+    __STUDIO_DEV_FIXTURES__ &&
+    new URLSearchParams(window.location.search).get("fixture") === "1";
+  const [connection, setConnection] =
+    useState<StudioConnection>(loadConnection);
+  const [connectionOpen, setConnectionOpen] = useState(false);
   const [mode, setMode] = useState<DataMode>("connecting");
   const [runs, setRuns] = useState<StudioRun[]>([]);
   const [selectedId, setSelectedId] = useState("");
@@ -129,6 +136,7 @@ export function App() {
   const [paused, setPaused] = useState(false);
   const [navView, setNavView] = useState<NavView>("studio");
   const [profileOpen, setProfileOpen] = useState(false);
+  const [projectOpen, setProjectOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [reviewDraft, setReviewDraft] = useState("");
   const [inspectorWidth, setInspectorWidth] = useState(430);
@@ -142,6 +150,17 @@ export function App() {
 
   const selectedRun =
     runs.find((item) => item.run.id === selectedId) ?? runs[0];
+  const applyConnection = (draft: StudioConnection) => {
+    const next = {
+      baseUrl: draft.baseUrl.trim().replace(/\/$/, ""),
+      token: draft.token.trim(),
+    };
+    saveConnection(next);
+    setConnection(next);
+    setConnectionOpen(false);
+    setMode("connecting");
+    setConnectionMessage("Connecting to the BuildLabs backend…");
+  };
 
   const showToast = useCallback(
     (
@@ -160,6 +179,9 @@ export function App() {
 
   const refreshRuns = useCallback(
     async (signal?: AbortSignal) => {
+      if (fixturesEnabled) {
+        return;
+      }
       try {
         const response = await loadStudioRuns(connection, signal);
         if (response.runs.length === 0) {
@@ -195,8 +217,30 @@ export function App() {
         );
       }
     },
-    [connection],
+    [connection, fixturesEnabled],
   );
+
+  useEffect(() => {
+    if (!fixturesEnabled) {
+      return;
+    }
+    let disposed = false;
+    void import("@studio-fixtures").then(({ studioFixtureRuns }) => {
+      if (disposed) {
+        return;
+      }
+      setMode("fixture");
+      setRuns(studioFixtureRuns);
+      setSelectedId(studioFixtureRuns[0]!.run.id);
+      setSelection(fixtureSelection(studioFixtureRuns[0]!));
+      setConnectionMessage(
+        "Local fixture mode. No backend, provider, payment, or proof data is shown.",
+      );
+    });
+    return () => {
+      disposed = true;
+    };
+  }, [fixturesEnabled]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -215,7 +259,15 @@ export function App() {
   }, [paused, refreshRuns]);
 
   useEffect(() => {
-    if (mode !== "live" || !selectedRun) {
+    if (!selectedRun) {
+      setSelection(null);
+      return;
+    }
+    if (mode === "fixture") {
+      setSelection(fixtureSelection(selectedRun));
+      return;
+    }
+    if (mode !== "live") {
       setSelection(null);
       return;
     }
@@ -245,6 +297,16 @@ export function App() {
           )
         : [],
     [runs, selectedRun],
+  );
+  const projectOptions = useMemo(
+    () =>
+      runs.filter(
+        (run, index, allRuns) =>
+          allRuns.findIndex(
+            (candidate) => candidate.run.projectId === run.run.projectId,
+          ) === index,
+      ),
+    [runs],
   );
   const completedSlots = projectRuns.filter((item) =>
     ["passed", "rejected", "failed", "cancelled"].includes(item.run.status),
@@ -314,22 +376,27 @@ export function App() {
     window.addEventListener("pointercancel", stopResize);
   };
 
-  if (mode !== "live" || !selectedRun || !selection) {
+  if ((mode !== "live" && mode !== "fixture") || !selectedRun || !selection) {
     return (
       <UnavailableStudio
+        connection={connection}
         connectionMessage={connectionMessage}
         mode={mode}
         navView={navView}
+        onConnectionClose={() => setConnectionOpen(false)}
+        onConnectionOpen={() => setConnectionOpen(true)}
+        onConnectionSave={applyConnection}
         onProfileClose={() => setProfileOpen(false)}
         onProfileToggle={() => setProfileOpen((value) => !value)}
         onViewChange={setNavView}
         profileOpen={profileOpen}
+        showConnection={connectionOpen}
       />
     );
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${mode === "fixture" ? " fixture-shell" : ""}`}>
       <IconRail
         view={navView}
         onViewChange={setNavView}
@@ -342,13 +409,46 @@ export function App() {
         <div className="topbar-project">
           <span className="studio-label">Admin Studio</span>
           <span className="topbar-divider" />
-          <button className="project-switcher" type="button">
-            <User size={15} className="project-icon" />
-            {projectName}
-            <ChevronDown size={14} />
-          </button>
+          <div className="project-switcher-wrap">
+            <button
+              className="project-switcher"
+              type="button"
+              aria-expanded={projectOpen}
+              aria-haspopup="menu"
+              onClick={() => setProjectOpen((open) => !open)}
+            >
+              <User size={15} className="project-icon" />
+              {projectName}
+              <ChevronDown size={14} />
+            </button>
+            {projectOpen ? (
+              <div className="project-switcher-menu" role="menu">
+                {projectOptions.map((run) => {
+                  const selected =
+                    run.run.projectId === selectedRun.run.projectId;
+                  return (
+                    <button
+                      key={run.run.projectId}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={selected}
+                      onClick={() => {
+                        setSelectedId(run.run.id);
+                        setProjectOpen(false);
+                        setLayout("focus");
+                      }}
+                    >
+                      <span>{formatProjectName(run.run.projectId)}</span>
+                      <small>{candidateLabel(run)}</small>
+                      {selected ? <Check size={14} /> : null}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
         </div>
-        <LifecycleBar run={selectedRun} />
+        <LifecycleBar run={selectedRun} mode={mode} />
         <div className="topbar-actions">
           <button
             className="icon-button"
@@ -384,6 +484,8 @@ export function App() {
         </div>
       </header>
 
+      {mode === "fixture" ? <FixtureBanner /> : null}
+
       {navView === "studio" ? (
         <main className="studio">
           <section className="studio-toolbar">
@@ -393,7 +495,11 @@ export function App() {
               </strong>
               <span className="muted-dot">•</span>
               <span>{timeAgo(selectedRun.run.createdAt)}</span>
-              <StatusPill mode={mode} message={connectionMessage} />
+              <StatusPill
+                mode={mode}
+                message={connectionMessage}
+                onClick={() => setConnectionOpen(true)}
+              />
             </div>
             <LayoutControl value={layout} onChange={setLayout} />
             <div className="toolbar-end">
@@ -543,26 +649,53 @@ export function App() {
           </button>
         </div>
       ) : null}
+      {connectionOpen ? (
+        <ConnectionDialog
+          connection={connection}
+          message={connectionMessage}
+          onClose={() => setConnectionOpen(false)}
+          onSave={applyConnection}
+        />
+      ) : null}
     </div>
   );
 }
 
+function fixtureSelection(run: StudioRun): StudioSelection {
+  return {
+    run,
+    events: run.activity.latestEvent ? [run.activity.latestEvent] : [],
+    evidence: [],
+    preview: null,
+  };
+}
+
 function UnavailableStudio({
+  connection,
   connectionMessage,
   mode,
   navView,
+  onConnectionClose,
+  onConnectionOpen,
+  onConnectionSave,
   onProfileClose,
   onProfileToggle,
   onViewChange,
   profileOpen,
+  showConnection,
 }: {
+  connection: StudioConnection;
   connectionMessage: string;
   mode: DataMode;
   navView: NavView;
+  onConnectionClose: () => void;
+  onConnectionOpen: () => void;
+  onConnectionSave: (connection: StudioConnection) => void;
   onProfileClose: () => void;
   onProfileToggle: () => void;
   onViewChange: (view: NavView) => void;
   profileOpen: boolean;
+  showConnection: boolean;
 }) {
   return (
     <div className="app-shell">
@@ -582,7 +715,11 @@ function UnavailableStudio({
             No active project
           </span>
         </div>
-        <StatusPill mode={mode} message={connectionMessage} />
+        <StatusPill
+          mode={mode}
+          message={connectionMessage}
+          onClick={onConnectionOpen}
+        />
       </header>
       <main className="studio unavailable-studio">
         <section className="studio-unavailable" aria-live="polite">
@@ -599,6 +736,25 @@ function UnavailableStudio({
           </span>
         </section>
       </main>
+      {showConnection ? (
+        <ConnectionDialog
+          connection={connection}
+          message={connectionMessage}
+          onClose={onConnectionClose}
+          onSave={onConnectionSave}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function FixtureBanner() {
+  return (
+    <div className="fixture-banner" role="status">
+      <TestTube2 size={15} aria-hidden="true" />
+      <span>
+        LOCAL FIXTURE DATA - fictional projects for Studio development
+      </span>
     </div>
   );
 }
@@ -691,11 +847,40 @@ function IconRail({
   );
 }
 
-function LifecycleBar({ run }: { run: StudioRun }) {
+function LifecycleBar({ run, mode }: { run: StudioRun; mode: DataMode }) {
+  if (mode === "fixture") {
+    return (
+      <div className="lifecycle" aria-label="Fixture lifecycle">
+        <ol className="lifecycle-track">
+          {[
+            "Fixture data",
+            "No payment data",
+            "No proof data",
+            "No delivery data",
+          ].map((label, index) => (
+            <li className="lifecycle-step pending" key={label}>
+              <span className="lifecycle-dot" />
+              <span className="lifecycle-name">{label}</span>
+              {index < 3 ? (
+                <span className="lifecycle-link" aria-hidden />
+              ) : null}
+            </li>
+          ))}
+        </ol>
+      </div>
+    );
+  }
   const currentIndex = stageOrder.indexOf(run.run.stage);
+  const contractRevision = run.assignment?.contract.contractRevision;
   const items = [
-    { label: "Paid", complete: true },
-    { label: "Contract v2", complete: true },
+    { label: "Assignment accepted", complete: true },
+    {
+      label:
+        contractRevision === undefined
+          ? "Contract recorded"
+          : `Contract v${contractRevision}`,
+      complete: run.assignment !== null,
+    },
     {
       label: titleCase(run.run.stage),
       complete: run.run.status === "passed",
@@ -742,16 +927,120 @@ function LifecycleBar({ run }: { run: StudioRun }) {
   );
 }
 
-function StatusPill({ mode, message }: { mode: DataMode; message: string }) {
+function StatusPill({
+  mode,
+  message,
+  onClick,
+}: {
+  mode: DataMode;
+  message: string;
+  onClick?: () => void;
+}) {
   return (
-    <button className={`connection-pill ${mode}`} type="button" title={message}>
+    <button
+      className={`connection-pill ${mode}`}
+      type="button"
+      title={message}
+      onClick={onClick}
+    >
       <span />
       {mode === "live"
         ? "Live"
-        : mode === "connecting"
-          ? "Connecting"
-          : "Disconnected"}
+        : mode === "fixture"
+          ? "Fixture"
+          : mode === "connecting"
+            ? "Connecting"
+            : "Disconnected"}
     </button>
+  );
+}
+
+function ConnectionDialog({
+  connection,
+  message,
+  onClose,
+  onSave,
+}: {
+  connection: StudioConnection;
+  message: string;
+  onClose: () => void;
+  onSave: (connection: StudioConnection) => void;
+}) {
+  const [draft, setDraft] = useState(connection);
+  return (
+    <div className="dialog-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        className="connection-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="connection-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header>
+          <div>
+            <h2 id="connection-title">Studio connection</h2>
+            <p>Authenticate this operator tab to the build backend.</p>
+          </div>
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Close connection settings"
+            onClick={onClose}
+          >
+            <X size={16} />
+          </button>
+        </header>
+        <div className="dialog-status">
+          <CircleDot size={13} aria-hidden="true" />
+          <span>{message}</span>
+        </div>
+        <label>
+          Backend URL
+          <input
+            type="url"
+            value={draft.baseUrl}
+            placeholder="Use the current origin"
+            autoComplete="off"
+            onChange={(event) =>
+              setDraft((current) => ({
+                ...current,
+                baseUrl: event.target.value,
+              }))
+            }
+          />
+          <small>Leave blank when Studio is served by the backend proxy.</small>
+        </label>
+        <label>
+          Internal access token
+          <input
+            type="password"
+            value={draft.token}
+            autoComplete="off"
+            onChange={(event) =>
+              setDraft((current) => ({
+                ...current,
+                token: event.target.value,
+              }))
+            }
+          />
+          <small>Stored only in this browser tab session.</small>
+        </label>
+        <footer>
+          <button className="quiet-button" type="button" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            className="secondary-button"
+            type="button"
+            disabled={draft.token.trim().length === 0}
+            onClick={() => onSave(draft)}
+          >
+            <PlugZap size={15} />
+            Connect
+          </button>
+        </footer>
+      </section>
+    </div>
   );
 }
 
@@ -844,10 +1133,10 @@ function MonitorArea({
           />
           <div className="monitor-content">
             {layout !== "focus" && index > 0 ? (
-              mode === "unavailable" ? (
+              mode === "unavailable" || mode === "fixture" ? (
                 <DisconnectedState />
               ) : (
-                <SitePreview variant={index} compact />
+                <SitePreview run={run} compact />
               )
             ) : (
               <MonitorContent
@@ -972,6 +1261,9 @@ function MonitorContent({
   selection: StudioSelection;
   mode: DataMode;
 }) {
+  if (mode === "fixture") {
+    return <FixtureMonitorState run={selection.run} />;
+  }
   if (mode === "unavailable") {
     return <DisconnectedState />;
   }
@@ -986,7 +1278,7 @@ function MonitorContent({
         />
       );
     }
-    return <SitePreview variant={selection.run.run.slotId ?? 1} />;
+    return <SitePreview run={selection.run} />;
   }
   if (tab === "code") {
     return <CodeMonitor events={selection.events} mode={mode} />;
@@ -1015,99 +1307,313 @@ function DisconnectedState() {
   );
 }
 
-function SitePreview({
-  variant = 1,
-  compact = false,
-}: {
-  variant?: number;
-  compact?: boolean;
-}) {
-  return (
-    <div
-      className={`site-preview variant-${(variant % 4) + 1} ${compact ? "compact" : ""}`}
-    >
-      <header className="site-nav">
-        <div className="site-logo">
-          <Mountain size={28} strokeWidth={1.5} />
-          <span>
-            <strong>MISSION PEAK</strong>
-            <small>ELECTRIC</small>
-          </span>
+const FixtureMonitorState = __STUDIO_DEV_FIXTURES__
+  ? function FixtureMonitorState({ run }: { run: StudioRun }) {
+      const [showBooking, setShowBooking] = useState(false);
+      const [revisionApplied, setRevisionApplied] = useState(false);
+      const projectName = candidateLabel(run).replace(/^Candidate \d+ · /, "");
+      const site = fixtureSite(run.run.projectId);
+      const feedback = fixtureFeedback(run.run.projectId);
+      const fixtureSponsorReplay = [
+        ["ElevenLabs", "Voice intake", "Fixture replay - no provider call"],
+        [
+          "Fireworks",
+          "Requirements and build plan",
+          "Fixture replay - no provider call",
+        ],
+        [
+          "Stripe",
+          "Checkout and payment gate",
+          "Fixture replay - no payment created",
+        ],
+        [
+          "Daytona",
+          "Isolated build and clean verifier",
+          "Fixture replay - no sandbox created",
+        ],
+        [
+          "CodeRabbit",
+          "Frozen-candidate review",
+          "Fixture replay - no review started",
+        ],
+        [
+          "Braintrust",
+          "Trace and evaluation gate",
+          "Fixture replay - no trace written",
+        ],
+        [
+          "Fly.io",
+          "Production deployment",
+          "Fixture replay - no deployment started",
+        ],
+        ["Resend", "Delivery email", "Fixture replay - no email sent"],
+      ] as const;
+      return (
+        <div className="fixture-demo">
+          <div className="fixture-demo-label">
+            <TestTube2 size={14} />
+            Simulated example website - local fixture only
+          </div>
+          <section
+            className="fixture-feedback"
+            aria-label="Simulated client feedback"
+          >
+            <div className="fixture-feedback-copy">
+              <span>SIMULATED CLIENT FEEDBACK</span>
+              <strong>{feedback.request}</strong>
+              <small>
+                {revisionApplied
+                  ? feedback.result
+                  : "Revision queued in this local replay"}
+              </small>
+            </div>
+            <button
+              type="button"
+              className={revisionApplied ? "applied" : ""}
+              onClick={() => setRevisionApplied((applied) => !applied)}
+            >
+              {revisionApplied ? <Check size={14} /> : <Sparkles size={14} />}
+              {revisionApplied ? "Revision applied" : "Apply revision"}
+            </button>
+          </section>
+          <div
+            className={`fixture-site${revisionApplied ? " revision-applied" : ""}`}
+            style={{ "--fixture-hero": `url(${site.image})` } as CSSProperties}
+          >
+            <header className="fixture-site-nav">
+              <strong>{site.brand}</strong>
+              <nav aria-label="Example site navigation">
+                <button type="button">{site.navOne}</button>
+                <button type="button">{site.navTwo}</button>
+                <button type="button" onClick={() => setShowBooking(true)}>
+                  {site.action}
+                </button>
+              </nav>
+            </header>
+            <section className="fixture-site-hero">
+              <p>FICTIONAL PRODUCT WEBSITE</p>
+              <h1>{revisionApplied ? feedback.headline : site.headline}</h1>
+              <span>
+                {revisionApplied ? feedback.description : site.description}
+              </span>
+              <button type="button" onClick={() => setShowBooking(true)}>
+                {revisionApplied ? feedback.action : site.action}{" "}
+                <ChevronRight size={15} />
+              </button>
+            </section>
+            <section
+              className="fixture-site-card"
+              aria-label="Example booking widget"
+            >
+              <div>
+                <small>
+                  {revisionApplied ? "REVISION 02" : site.cardEyebrow}
+                </small>
+                <strong>
+                  {revisionApplied ? feedback.cardTitle : site.cardTitle}
+                </strong>
+                <span>
+                  {revisionApplied ? feedback.cardDetail : site.cardDetail}
+                </span>
+              </div>
+              <button type="button" onClick={() => setShowBooking(true)}>
+                Open
+              </button>
+            </section>
+            {showBooking ? (
+              <div className="fixture-site-notice" role="status">
+                Demo interaction recorded locally. No booking, contact data, or
+                API request was created.
+                <button type="button" onClick={() => setShowBooking(false)}>
+                  Close
+                </button>
+              </div>
+            ) : null}
+          </div>
+          <section className="fixture-replay" aria-label="Build demo replay">
+            <header>
+              <div>
+                <small>DEMO REPLAY</small>
+                <strong>{projectName} build path</strong>
+              </div>
+              <span>NO LIVE WORK CREATED</span>
+            </header>
+            <div className="fixture-replay-grid">
+              {fixtureSponsorReplay.map(([provider, step, status]) => (
+                <article key={provider}>
+                  <div>
+                    <strong>{provider}</strong>
+                    <span>{step}</span>
+                  </div>
+                  <small>{status}</small>
+                </article>
+              ))}
+            </div>
+          </section>
         </div>
-        <nav aria-label="Preview website navigation">
-          <span>Services</span>
-          <span>About</span>
-          <span>Contact</span>
-          {compact ? (
-            <span className="site-cta">Request an estimate</span>
-          ) : (
-            <button type="button">Request an estimate</button>
-          )}
-        </nav>
-      </header>
-      <section className="site-hero">
-        <div className="site-copy">
-          <p className="eyebrow">RESIDENTIAL ELECTRICAL</p>
-          <h1>
-            Powering
-            <br />
-            what’s next.
-          </h1>
-          <p>
-            EV chargers and electrical panels for Fremont, Newark, and Union
-            City.
-          </p>
-          {compact ? (
-            <span className="site-cta">Request an estimate</span>
-          ) : (
-            <button type="button">Request an estimate</button>
-          )}
-        </div>
-        <ChargingScene variant={variant} />
-      </section>
-      <footer className="site-services">
-        <div>
-          <PlugZap size={25} />
-          <span>EV chargers</span>
-        </div>
-        <div>
-          <PanelsTopLeft size={25} />
-          <span>Electrical panels</span>
-        </div>
-        <div>
-          <Mountain size={25} />
-          <span>Fremont · Newark · Union City</span>
-        </div>
-      </footer>
-    </div>
-  );
+      );
+    }
+  : function FixtureMonitorState() {
+      return <DisconnectedState />;
+    };
+
+function fixtureSite(projectId: string): {
+  brand: string;
+  navOne: string;
+  navTwo: string;
+  action: string;
+  headline: string;
+  description: string;
+  cardEyebrow: string;
+  cardTitle: string;
+  cardDetail: string;
+  image: string;
+} {
+  if (projectId.includes("harbor-counsel")) {
+    return {
+      brand: "HARBOR COUNSEL",
+      navOne: "Intake",
+      navTwo: "Documents",
+      action: "Start checklist",
+      headline: "Bring order to the first conversation.",
+      description:
+        "A fictional intake workspace for organizing questions and document readiness. It is not a law firm and does not provide legal advice.",
+      cardEyebrow: "INTAKE CHECKLIST",
+      cardTitle: "Four items ready for review",
+      cardDetail: "Local demo state only",
+      image: "/studio/fixtures/harbor-counsel.png",
+    };
+  }
+  if (projectId.includes("cascade-home")) {
+    return {
+      brand: "CASCADE HOME",
+      navOne: "Rooms",
+      navTwo: "Project board",
+      action: "Plan a room",
+      headline: "Turn a rough idea into a room-by-room plan.",
+      description:
+        "A fictional home project planner with local filters, priorities, and an estimate summary that never leaves the browser.",
+      cardEyebrow: "PROJECT SNAPSHOT",
+      cardTitle: "Kitchen refresh",
+      cardDetail: "3 priorities · Demo estimate",
+      image: "/studio/fixtures/cascade-home.png",
+    };
+  }
+  if (projectId.includes("civic-garden")) {
+    return {
+      brand: "CIVIC GARDEN",
+      navOne: "Plots",
+      navTwo: "Volunteer board",
+      action: "Explore plots",
+      headline: "A shared garden deserves a shared view.",
+      description:
+        "A fictional neighborhood workspace for viewing demo plot availability and coordinating volunteer tasks.",
+      cardEyebrow: "THIS WEEK",
+      cardTitle: "Three volunteer tasks open",
+      cardDetail: "Fixture schedule · No signup created",
+      image: "/studio/fixtures/civic-garden.png",
+    };
+  }
+  return {
+    brand: "NORTHSTAR",
+    navOne: "How it works",
+    navTwo: "Availability",
+    action: "See available times",
+    headline: "Give every good idea a place on the calendar.",
+    description:
+      "A polished fictional scheduling flow for teams that want a calmer way to plan their next conversation.",
+    cardEyebrow: "NORTHSTAR SESSION",
+    cardTitle: "30 minute working session",
+    cardDetail: "Tuesday · 10:00 AM",
+    image: "/studio/fixtures/northstar-studio.png",
+  };
 }
 
-function ChargingScene({ variant }: { variant: number }) {
+function fixtureFeedback(projectId: string): {
+  request: string;
+  result: string;
+  headline: string;
+  description: string;
+  action: string;
+  cardTitle: string;
+  cardDetail: string;
+} {
+  if (projectId.includes("harbor-counsel")) {
+    return {
+      request:
+        "Make the first step less intimidating and show what to prepare.",
+      result: "Added a clear starting point and a concise preparation summary.",
+      headline: "Start prepared, one clear step at a time.",
+      description:
+        "A revised fictional intake workspace that makes the first conversation easier to organize. It does not provide legal advice.",
+      action: "View preparation list",
+      cardTitle: "A clearer first checklist",
+      cardDetail: "Revision 02 · Local demo state",
+    };
+  }
+  if (projectId.includes("cascade-home")) {
+    return {
+      request: "Show the budget and next decision before the project board.",
+      result: "Reordered the page around budget context and the next decision.",
+      headline: "See the next decision before the next detail.",
+      description:
+        "A revised fictional home-planning page that leads with priorities and a transparent demo estimate.",
+      action: "Review next decision",
+      cardTitle: "Budget context, first",
+      cardDetail: "Revision 02 · Demo estimate only",
+    };
+  }
+  if (projectId.includes("civic-garden")) {
+    return {
+      request: "Make it easier to spot what needs a volunteer this week.",
+      result: "Brought open tasks forward and simplified the weekly view.",
+      headline: "See where a little help matters this week.",
+      description:
+        "A revised fictional garden workspace that makes open volunteer tasks easier to find and understand.",
+      action: "View open tasks",
+      cardTitle: "Open tasks at a glance",
+      cardDetail: "Revision 02 · No signup created",
+    };
+  }
+  return {
+    request:
+      "Make availability easier to scan before someone commits to a call.",
+    result:
+      "Promoted the next available session and simplified the call to action.",
+    headline: "Find a good time without hunting for it.",
+    description:
+      "A revised fictional scheduling page with the next available session placed directly in the decision path.",
+    action: "Choose a time",
+    cardTitle: "Next available working session",
+    cardDetail: "Revision 02 · Tuesday at 10:00 AM",
+  };
+}
+
+function SitePreview({
+  run,
+  compact = false,
+}: {
+  run: StudioRun;
+  compact?: boolean;
+}) {
+  const ready = run.previewAvailable;
   return (
     <div
-      className={`charging-scene scene-${(variant % 4) + 1}`}
-      aria-label="EV charger installation"
+      className={`disconnected-state preview-awaiting ${compact ? "compact" : ""}`}
     >
-      <span className="wall-line one" />
-      <span className="wall-line two" />
-      <div className="charger">
-        <span className="charger-screen" />
-        <span className="charger-port" />
-      </div>
-      <div className="cable cable-one" />
-      <div className="cable cable-two" />
-      <div className="panel-box">
-        <span />
-        <span />
-        <span />
-      </div>
-      <div className="plant">
-        <i />
-        <i />
-        <i />
-        <i />
-      </div>
+      {ready ? (
+        <ExternalLink size={compact ? 18 : 26} />
+      ) : (
+        <Monitor size={compact ? 18 : 26} />
+      )}
+      <p>{ready ? "Operator preview ready" : "Sandbox view pending"}</p>
+      {!compact ? (
+        <span>
+          {ready
+            ? "Select this candidate to request its short-lived Daytona preview."
+            : `No preview URL has been emitted while this run is ${run.run.stage}.`}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -1197,13 +1703,17 @@ function CandidateStrip({
             onClick={() => onSelect(run)}
           >
             <div className="candidate-thumb">
-              {mode === "unavailable" ? (
+              {mode === "unavailable" || mode === "fixture" ? (
                 <span className="thumb-disconnected">
-                  <Unplug size={18} />
-                  Offline
+                  {mode === "fixture" ? (
+                    <TestTube2 size={18} />
+                  ) : (
+                    <Unplug size={18} />
+                  )}
+                  {mode === "fixture" ? "Fixture" : "Offline"}
                 </span>
               ) : (
-                <SitePreview variant={index + 1} compact />
+                <SitePreview run={run} compact />
               )}
               <Maximize2 size={14} />
             </div>
@@ -1271,7 +1781,9 @@ function Inspector({
         {activeTab === "contract" ? (
           <ContractPanel selection={selection} />
         ) : null}
-        {activeTab === "proof" ? <ProofPanel selection={selection} /> : null}
+        {activeTab === "proof" ? (
+          <ProofPanel selection={selection} mode={mode} />
+        ) : null}
         {activeTab === "diff" ? (
           <DiffPanel events={selection.events} evidence={selection.evidence} />
         ) : null}
@@ -1332,14 +1844,18 @@ function ActivityPanel({
       <section className="inspector-section live-run">
         <div className="section-heading">
           <div>
-            <h2>Live run</h2>
+            <h2>{mode === "fixture" ? "Fixture run" : "Live run"}</h2>
             <p>
               {allRuns.length} candidates · {totalEvents} events · Contract v
               {selected.assignment?.contract.contractRevision ?? "—"}
             </p>
           </div>
           <span className={`mode-indicator ${mode}`}>
-            {mode === "live" ? "LIVE" : "UNAVAILABLE"}
+            {mode === "live"
+              ? "LIVE"
+              : mode === "fixture"
+                ? "FIXTURE"
+                : "UNAVAILABLE"}
           </span>
         </div>
       </section>
@@ -1371,12 +1887,17 @@ function ActivityPanel({
 
       <section className="inspector-section run-stages">
         <h3>Run stages</h3>
-        <StageList run={selected} />
+        <StageList run={selected} mode={mode} />
       </section>
 
       <section className="inspector-section attention-section">
         <h3>Attention</h3>
-        {selected.proof.failed + selected.proof.errors > 0 ? (
+        {mode === "fixture" ? (
+          <div className="quiet-state">
+            <TestTube2 size={15} />
+            Fixture mode has no proof receipts
+          </div>
+        ) : selected.proof.failed + selected.proof.errors > 0 ? (
           <button className="attention-card" type="button">
             <Gauge size={15} />
             <span>
@@ -1417,11 +1938,31 @@ function StageProgress({
   );
 }
 
-function StageList({ run }: { run: StudioRun }) {
+function StageList({ run, mode }: { run: StudioRun; mode: DataMode }) {
+  if (mode === "fixture") {
+    return (
+      <ol className="stage-list">
+        {[
+          ["Fixture project", "local-only data"],
+          ["Payment", "not recorded"],
+          ["Proof", "not recorded"],
+          ["Deploy + delivery", "not recorded"],
+        ].map(([label, detail], index) => (
+          <li className={index === 0 ? "active" : "locked"} key={label}>
+            <span className="stage-node">
+              {index === 0 ? <TestTube2 size={11} /> : null}
+            </span>
+            <strong>{label}</strong>
+            <small>{detail}</small>
+          </li>
+        ))}
+      </ol>
+    );
+  }
   const current = stageOrder.indexOf(run.run.stage);
   const stages = [
     { id: "queued", label: "Intake", detail: "assignment accepted" },
-    { id: "provisioning", label: "Payment", detail: "verified upstream" },
+    { id: "provisioning", label: "Contract", detail: "recorded by backend" },
     { id: "generating", label: "Candidate build", detail: "sandbox work" },
     { id: "verifying", label: "Automated review", detail: "durable checks" },
     { id: "reviewing", label: "Proof gate", detail: "evidence review" },
@@ -1519,8 +2060,24 @@ function ContractPanel({ selection }: { selection: StudioSelection }) {
   );
 }
 
-function ProofPanel({ selection }: { selection: StudioSelection }) {
+function ProofPanel({
+  selection,
+  mode,
+}: {
+  selection: StudioSelection;
+  mode: DataMode;
+}) {
   const evidence = selection.evidence;
+  if (mode === "fixture") {
+    return (
+      <section className="inspector-section">
+        <EmptyInspector
+          icon={TestTube2}
+          text="Fixture mode has no durable proof receipts."
+        />
+      </section>
+    );
+  }
   const passCount = evidence.filter((item) => item.status === "PASS").length;
   return (
     <>

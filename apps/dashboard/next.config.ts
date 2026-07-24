@@ -30,7 +30,7 @@ const securityHeaders = [
   { key: "X-Robots-Tag", value: "noindex, nofollow" },
   {
     key: "Permissions-Policy",
-    value: "camera=(), microphone=(), geolocation=(), payment=()",
+    value: "camera=(), microphone=(self), geolocation=(), payment=()",
   },
 ];
 

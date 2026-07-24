@@ -1,8 +1,6 @@
-import { createReadStream, existsSync } from "node:fs";
+import { createReadStream } from "node:fs";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { resolve } from "node:path";
 
-import fastifyStatic from "@fastify/static";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { z, ZodError } from "zod";
 
@@ -188,6 +186,13 @@ interface SponsorStatusPayload {
   checkedAt?: string;
 }
 
+interface IntegrationProbePayload extends SponsorStatusPayload {
+  component: "build-agent-backend";
+  configuration: {
+    daytonaSnapshot: string;
+  };
+}
+
 export function createHttpServer(
   dependencies: HttpServerDependencies,
 ): FastifyInstance {
@@ -195,13 +200,13 @@ export function createHttpServer(
     | {
         expiresAt: number;
         statusCode: 200 | 503;
-        payload: SponsorStatusPayload;
+        payload: IntegrationProbePayload;
       }
     | undefined;
   let providerProbeInFlight:
     | Promise<{
         statusCode: 200 | 503;
-        payload: SponsorStatusPayload;
+        payload: IntegrationProbePayload;
       }>
     | undefined;
   const server = Fastify({
@@ -946,7 +951,7 @@ function configuredSponsorStatuses(
 
 async function probeSponsorProviders(
   dependencies: HttpServerDependencies,
-): Promise<{ statusCode: 200 | 503; payload: SponsorStatusPayload }> {
+): Promise<{ statusCode: 200 | 503; payload: IntegrationProbePayload }> {
   const signal = AbortSignal.timeout(20_000);
   const probes: Array<readonly [SponsorName, () => Promise<void>]> = [
     ["daytona", () => dependencies.sandboxProvider.health(signal)],
@@ -977,7 +982,11 @@ async function probeSponsorProviders(
     statusCode: ready ? 200 : 503,
     payload: {
       status: ready ? "ready" : "not_ready",
+      component: "build-agent-backend",
       providers,
+      configuration: {
+        daytonaSnapshot: dependencies.config.DAYTONA_BUILD_SNAPSHOT,
+      },
       checkedAt: new Date().toISOString(),
     },
   };
@@ -1207,39 +1216,12 @@ function validFrozenPreviewTarget(
 }
 
 function registerStudioShell(server: FastifyInstance): void {
-  const studioRoot = resolve(process.cwd(), "dist", "studio");
-  const indexPath = resolve(studioRoot, "index.html");
-  if (!existsSync(indexPath)) {
-    return;
-  }
-
-  void server.register(fastifyStatic, {
-    root: studioRoot,
-    prefix: "/studio/",
-    decorateReply: false,
-    index: ["index.html"],
-  });
-  server.get("/", (_request, reply) => reply.redirect("/studio/"));
-  server.get("/studio", (_request, reply) => reply.redirect("/studio/"));
-  server.addHook("onSend", (request, reply, payload, done) => {
-    if (request.url === "/studio" || request.url.startsWith("/studio/")) {
-      void reply
-        .header("Cache-Control", "no-store")
-        .header("Cross-Origin-Opener-Policy", "same-origin")
-        .header("Referrer-Policy", "no-referrer")
-        .header("X-Content-Type-Options", "nosniff")
-        .header(
-          "Content-Security-Policy",
-          [
-            "default-src 'self'",
-            "connect-src 'self' http://127.0.0.1:* http://localhost:* https:",
-            "frame-src 'self' https:",
-            "img-src 'self' data: https:",
-            "script-src 'self'",
-            "style-src 'self' 'unsafe-inline'",
-          ].join("; "),
-        );
-    }
-    done(null, payload);
-  });
+  const dashboardOrigin = process.env.BUILDLABS_DASHBOARD_URL?.replace(
+    /\/$/u,
+    "",
+  );
+  const dashboardUrl = `${dashboardOrigin || "http://127.0.0.1:3200"}/operator`;
+  server.get("/", (_request, reply) => reply.redirect(dashboardUrl));
+  server.get("/studio", (_request, reply) => reply.redirect(dashboardUrl));
+  server.get("/studio/*", (_request, reply) => reply.redirect(dashboardUrl));
 }

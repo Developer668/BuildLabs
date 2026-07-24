@@ -40,17 +40,14 @@ Most AI builders optimize for a fast first draft. BuildLabs optimizes for
 > [`PRODUCT_SPEC.md`](./PRODUCT_SPEC.md). Guardrails and real commands:
 > [`AGENTS.md`](./AGENTS.md).
 
-## Operator Studio frontend
+## Unified project workspace
 
-The repository now includes a responsive React operator Studio at `/studio/`.
-It provides focus, two-up, and four-up candidate monitors; operator-only raw
-preview support; activity, contract, proof, diff, and tree inspection; a
-four-candidate filmstrip; connection settings; and an admin-review draft flow
-that never auto-applies instructions to the swarm. It uses authenticated REST
-polling and does not depend on a CopilotKit UI or AG-UI frontend client. The
-newer CopilotKit operator surface lives beside the customer workspace in
-`apps/dashboard` at `/operator`; both read the same authenticated build-backend
-API.
+The Next.js/CopilotKit dashboard in `apps/dashboard` is the single Studio and
+customer workspace. Operators use `/operator`; customers use their passwordless
+project link. It exposes authenticated, role-scoped durable state, sanitized WIP
+observation, proof, contract steering, and a signed browser voice conversation
+control. The legacy `/studio/` route redirects to the dashboard Studio rather
+than presenting a separate bearer-token frontend.
 
 - UI and interaction reference:
   [`STUDIO_FRONTEND_GUIDE.md`](./STUDIO_FRONTEND_GUIDE.md)
@@ -347,7 +344,7 @@ mandatory gate before builder dispatch.
 │   ├── orchestration-index.ts # General-orchestrator composition root
 │   └── ports/        # Provider and persistence interfaces
 ├── scripts/          # Daytona provisioning, config check, and bounded live provider probes
-├── studio/           # Vite operator studio SPA served by the build backend at /studio/
+├── studio/           # Retired Vite Studio source; /studio/ redirects to the Next.js Studio
 ├── tests/            # Build/proof tests plus orchestration*.test.ts lifecycle tests
 ├── PRODUCT_SPEC.md   # Full product specification (source of truth)
 ├── ADMIN_DASHBOARD_SPEC.md   # Admin/operator dashboard UX, auth, events, and states

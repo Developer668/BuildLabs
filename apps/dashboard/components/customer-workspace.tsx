@@ -37,6 +37,7 @@ import type {
   CustomerProjectSnapshot,
 } from "../lib/contracts";
 import { CopilotCustomerBindings } from "./copilot-customer-bindings";
+import { ProjectVoiceAgent } from "./project-voice-agent";
 import { type SteeringInput, useCustomerProject } from "./use-customer-project";
 import { WorkspaceShell } from "./workspace-shell";
 
@@ -333,6 +334,8 @@ function CustomerWorkspaceContent({
           />
         </div>
       </section>
+
+      <ProjectVoiceAgent fixture={fixture} />
     </div>
   );
 }

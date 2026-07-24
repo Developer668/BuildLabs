@@ -82,6 +82,23 @@ const EchoedInputPartSchema = z.discriminatedUnion("type", [
       detail: z.enum(["auto", "low", "high"]).optional(),
     })
     .strict(),
+  z
+    .object({
+      type: z.literal("text"),
+      text: z.string().max(2_000_000),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("image_url"),
+      image_url: z
+        .object({
+          url: z.string().min(1).max(MAX_INPUT_BYTES),
+        })
+        .strict(),
+      detail: z.enum(["auto", "low", "high"]).optional(),
+    })
+    .strict(),
 ]);
 const EchoedInputMessageSchema = z
   .object({
@@ -1083,9 +1100,9 @@ export interface FireworksResponsesCapabilityProbeOptions {
 }
 
 const RED_PNG =
-  "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgAQMAAABJtOi3AAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGUExURf8AAP///0EdNBEAAAABYktHRAH/Ai3eAAAAB3RJTUUH6gcYExwwgkhB/AAAACV0RVh0ZGF0ZTpjcmVhdGUAMjAyNi0wNy0yNFQxOToyODo0OCswMDowMNLaOU8AAAAldEVYdGRhdGU6bW9kaWZ5ADIwMjYtMDctMjRUMTk6Mjg6NDgrMDA6MDCjh4HzAAAAKHRFWHRkYXRlOnRpbWVzdGFtcAAyMDI2LTA3LTI0VDE5OjI4OjQ4KzAwOjAw9JKgLAAAAAxJREFUCNdjYBjcAAAAoAABYSV9RwAAAABJRU5ErkJggg==";
+  "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgAQMAAABJtOi3AAAAA1BMVEX/AAAZ4gk3AAAADElEQVQI12NgGNwAAACgAAFhJX1HAAAAAElFTkSuQmCC";
 const BLUE_PNG =
-  "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgAQMAAABJtOi3AAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGUExURQAA/////3vcmSwAAAABYktHRAH/Ai3eAAAAB3RJTUUH6gcYExwwgkhB/AAAACV0RVh0ZGF0ZTpjcmVhdGUAMjAyNi0wNy0yNFQxOToyODo0OCswMDowMNLaOU8AAAAldEVYdGRhdGU6bW9kaWZ5ADIwMjYtMDctMjRUMTk6Mjg6NDgrMDA6MDCjh4HzAAAAKHRFWHRkYXRlOnRpbWVzdGFtcAAyMDI2LTA3LTI0VDE5OjI4OjQ4KzAwOjAw9JKgLAAAAAxJREFUCNdjYBjcAAAAoAABYSV9RwAAAABJRU5ErkJggg==";
+  "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgAQMAAABJtOi3AAAAA1BMVEUAAP+KeNJXAAAADElEQVQI12NgGNwAAACgAAFhJX1HAAAAAElFTkSuQmCC";
 const VisionProbeArgumentsSchema = z
   .object({
     first: z.literal("red"),
@@ -1112,7 +1129,7 @@ const ChatToolCallSchema = z
 const ChatAssistantMessageSchema = z
   .object({
     role: z.literal("assistant"),
-    content: z.string().max(2_000_000).nullable(),
+    content: z.string().max(2_000_000).nullable().optional(),
     reasoning_content: z
       .string()
       .max(MAX_REASONING_BYTES)

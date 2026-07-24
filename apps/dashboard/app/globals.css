@@ -589,6 +589,55 @@ select:focus-visible,
   font-size: 12px;
 }
 
+.voice-agent-panel {
+  display: flex;
+  min-height: 88px;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+}
+
+.voice-agent-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid #9fd7d7;
+  border-radius: 6px;
+  background: #e9f7f6;
+  color: var(--cyan);
+}
+
+.voice-agent-icon svg {
+  width: 21px;
+  height: 21px;
+}
+
+.voice-agent-copy {
+  min-width: 0;
+}
+
+.voice-agent-copy strong {
+  font-size: 13px;
+}
+
+.voice-agent-copy p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.voice-agent-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
 .milestone-rail {
   position: relative;
   display: grid;
@@ -2103,6 +2152,16 @@ select:focus-visible,
   .section-heading > :last-child {
     max-width: 100%;
     justify-self: start;
+  }
+
+  .voice-agent-panel {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .voice-agent-actions {
+    width: 100%;
+    margin-left: 56px;
   }
 
   .milestone-rail {
