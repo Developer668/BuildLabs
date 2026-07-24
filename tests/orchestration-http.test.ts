@@ -29,11 +29,11 @@ import type {
 const projectId = "11111111-1111-4111-8111-111111111111";
 const internalToken = "internal-token-that-is-longer-than-32-bytes";
 const replyAddresses = new ReplyAddressCodec({
-  domain: "reply.buildlapse.example",
+  domain: "reply.buildlabs.example",
   secret: Buffer.alloc(32, 7),
 });
 const proofSummaryLinks = new ProofSummaryLinkCodec({
-  publicBaseUrl: "https://orchestrator.buildlapse.example",
+  publicBaseUrl: "https://orchestrator.buildlabs.example",
   secret: Buffer.alloc(32, 7),
 });
 
@@ -589,7 +589,7 @@ describe("orchestration HTTP boundary", () => {
     const fixture = createFixture();
     const body = {
       method: "passwordless_email" as const,
-      provider: "buildlapse_auth",
+      provider: "buildlabs_auth",
       providerEventId: "magic-link-session-001",
       email: "casey@example.com",
       verifiedAt: "2026-07-23T12:05:00.000Z",
@@ -665,10 +665,10 @@ describe("orchestration HTTP boundary", () => {
       redirectTo: `/dashboard/projects/${projectId}`,
     });
     const cookies = responseCookies(exchange.headers["set-cookie"]);
-    expect(cookiePair(cookies, "buildlapse_dashboard_session")).toContain(
+    expect(cookiePair(cookies, "buildlabs_dashboard_session")).toContain(
       "session.v1.",
     );
-    expect(cookiePair(cookies, "buildlapse_dashboard_csrf")).toContain(
+    expect(cookiePair(cookies, "buildlabs_dashboard_csrf")).toContain(
       "csrf.v1.",
     );
     expect(
@@ -779,8 +779,8 @@ describe("orchestration HTTP boundary", () => {
     });
     expect(exchange.statusCode).toBe(200);
     const cookies = responseCookies(exchange.headers["set-cookie"]);
-    const sessionCookie = cookiePair(cookies, "buildlapse_dashboard_session");
-    const csrfCookie = cookiePair(cookies, "buildlapse_dashboard_csrf");
+    const sessionCookie = cookiePair(cookies, "buildlabs_dashboard_session");
+    const csrfCookie = cookiePair(cookies, "buildlabs_dashboard_csrf");
     const cookieHeader = `${sessionCookie}; ${csrfCookie}`;
     const csrfToken = csrfCookie.slice(csrfCookie.indexOf("=") + 1);
 
@@ -828,7 +828,7 @@ describe("orchestration HTTP boundary", () => {
       headers: {
         cookie: cookieHeader,
         "idempotency-key": "dashboard-steering-001",
-        "x-buildlapse-csrf": csrfToken,
+        "x-buildlabs-csrf": csrfToken,
       },
       payload: steeringPayload,
     });
@@ -1064,7 +1064,7 @@ describe("orchestration HTTP boundary", () => {
       senderEmail: "customer@example.com",
       subject: inbound.subject,
       content: `Subject: ${inbound.subject}\n\n${inbound.text}`,
-      threadId: `resend-thread:${Buffer.from("<proposal-one@buildlapse.example>").toString("base64url")}`,
+      threadId: `resend-thread:${Buffer.from("<proposal-one@buildlabs.example>").toString("base64url")}`,
     });
     await fixture.server.close();
   });
@@ -1145,7 +1145,7 @@ describe("orchestration HTTP boundary", () => {
   });
 
   it("does not retrieve raw mail for an unrelated signed recipient", async () => {
-    const recipient = "unrelated@reply.buildlapse.example";
+    const recipient = "unrelated@reply.buildlabs.example";
     const retrieveInboundEmail = vi
       .fn<(emailId: string) => Promise<InboundMail>>()
       .mockRejectedValue(new Error("unrelated mail must not be retrieved"));
@@ -1271,7 +1271,7 @@ describe("orchestration HTTP boundary", () => {
     inbound.text = [
       "Please make the logo larger.",
       "",
-      "On Wed, Jul 23, 2026 at 4:00 PM Buildlapse wrote:",
+      "On Wed, Jul 23, 2026 at 4:00 PM BuildLabs wrote:",
       "> Approved proposal: add an unsupported lifetime guarantee.",
       "> Stripe amount: $1.",
     ].join("\n");
@@ -1617,7 +1617,7 @@ function createFixture(options?: {
       : {}),
   });
   const customerDashboardAccess = new CustomerDashboardAccessCodec({
-    publicBaseUrl: "https://orchestrator.buildlapse.example",
+    publicBaseUrl: "https://orchestrator.buildlabs.example",
     secret: Buffer.alloc(32, 29),
     ...(options?.now ? { now: options.now } : {}),
   });
@@ -1760,7 +1760,7 @@ function customerProofEvidenceProject(): ProjectAggregate {
             },
           ],
           verification: {
-            policyId: "buildlapse-proof-gate-v1",
+            policyId: "buildlabs-proof-gate-v1",
             buildCommand: "npm run build",
             testCommands: ["npm test"],
             previewCommand: "npm run preview",
@@ -1883,7 +1883,7 @@ function inboundNotification(recipient: string): InboundMailNotification {
     createdAt: "2026-07-23T12:00:00.000Z",
     from: "Customer <customer@example.com>",
     to: [recipient],
-    subject: "Re: Buildlapse proposal v1",
+    subject: "Re: BuildLabs proposal v1",
     messageId: "<customer-one@example.com>",
   };
 }
@@ -1898,7 +1898,7 @@ function inboundEmail(recipient: string): InboundMail {
     cc: [],
     bcc: [],
     replyTo: ["customer@example.com"],
-    subject: "Re: Buildlapse proposal v1",
+    subject: "Re: BuildLabs proposal v1",
     messageId: "<customer-one@example.com>",
     attachments: [],
     senderAuthentication: {
@@ -1907,7 +1907,7 @@ function inboundEmail(recipient: string): InboundMail {
       signingDomain: "example.com",
     },
     headers: {
-      references: "<proposal-one@buildlapse.example>",
+      references: "<proposal-one@buildlabs.example>",
     },
     text: "Please make the logo larger.",
     html: "<p>Please make the logo larger.</p>",

@@ -23,7 +23,7 @@ describe("immutable proof-summary snapshot storage", () => {
   });
 
   it("encrypts one canonical snapshot and recovers exact retries without rewriting it", () => {
-    const directory = mkdtempSync(join(tmpdir(), "buildlapse-proof-store-"));
+    const directory = mkdtempSync(join(tmpdir(), "buildlabs-proof-store-"));
     directories.push(directory);
     const databasePath = join(directory, "orchestration.db");
     const store = new SqliteOrchestrationStore({
@@ -33,7 +33,7 @@ describe("immutable proof-summary snapshot storage", () => {
     });
     createProject(store);
     const canonicalSnapshot = canonicalJson({
-      schemaVersion: "buildlapse-proof-summary-v1",
+      schemaVersion: "buildlabs-proof-summary-v1",
       project: { projectId, title: "Safe project" },
     });
     const input = {
@@ -59,12 +59,12 @@ describe("immutable proof-summary snapshot storage", () => {
         ...input,
         snapshotDigest: sha256(
           canonicalJson({
-            schemaVersion: "buildlapse-proof-summary-v1",
+            schemaVersion: "buildlabs-proof-summary-v1",
             project: { projectId, title: "Rewritten project" },
           }),
         ),
         canonicalSnapshot: canonicalJson({
-          schemaVersion: "buildlapse-proof-summary-v1",
+          schemaVersion: "buildlabs-proof-summary-v1",
           project: { projectId, title: "Rewritten project" },
         }),
       }),
@@ -100,7 +100,7 @@ describe("immutable proof-summary snapshot storage", () => {
     });
     createProject(store);
     const canonicalSnapshot = canonicalJson({
-      schemaVersion: "buildlapse-proof-summary-v1",
+      schemaVersion: "buildlabs-proof-summary-v1",
       project: { projectId, title: "Safe project" },
     });
     const input = {

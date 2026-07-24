@@ -129,7 +129,7 @@ type CancellationCapabilityPayload = z.infer<
 >;
 const CANCELLATION_CAPABILITY_TTL_MS = 2 * 60_000;
 const CANCELLATION_CAPABILITY_DOMAIN =
-  "buildlapse-elevenlabs-cancel-capability-v1:";
+  "buildlabs-elevenlabs-cancel-capability-v1:";
 const ProvenPreviewRequestSchema = z
   .object({
     eventId: z.uuid(),
@@ -227,7 +227,7 @@ export function createHttpServer(
   );
   server.addHook("preClose", async () => {
     for (const controller of activeAgUiStreams) {
-      controller.abort(new Error("Buildlapse backend is shutting down"));
+      controller.abort(new Error("BuildLabs backend is shutting down"));
     }
     activeAgUiStreams.clear();
     if (speechEngineAttachment) {
@@ -272,12 +272,12 @@ export function createHttpServer(
     if (
       request.url === "/health" ||
       request.url === "/ready" ||
-      !dependencies.config.BUILDLAPSE_INTERNAL_TOKEN
+      !dependencies.config.BUILDLABS_INTERNAL_TOKEN
     ) {
       return;
     }
     if (
-      !validBearerToken(request, dependencies.config.BUILDLAPSE_INTERNAL_TOKEN)
+      !validBearerToken(request, dependencies.config.BUILDLABS_INTERNAL_TOKEN)
     ) {
       await reply.code(401).send({
         error: "unauthorized",
@@ -363,7 +363,7 @@ export function createHttpServer(
       let artifactPath: string;
       try {
         artifactPath = await resolveArtifactFileForDownload(
-          dependencies.config.BUILDLAPSE_ARTIFACT_DIR,
+          dependencies.config.BUILDLABS_ARTIFACT_DIR,
           artifact,
         );
       } catch (error) {
@@ -618,7 +618,7 @@ export function createHttpServer(
   server.post(
     "/v1/integrations/elevenlabs/webrtc-token",
     async (request, reply) => {
-      if (!dependencies.config.BUILDLAPSE_INTERNAL_TOKEN) {
+      if (!dependencies.config.BUILDLABS_INTERNAL_TOKEN) {
         return reply.code(503).send({
           error: "integration_unconfigured",
           message:
@@ -628,7 +628,7 @@ export function createHttpServer(
       if (
         !validBearerToken(
           request,
-          dependencies.config.BUILDLAPSE_INTERNAL_TOKEN,
+          dependencies.config.BUILDLABS_INTERNAL_TOKEN,
         )
       ) {
         return reply.code(401).send({

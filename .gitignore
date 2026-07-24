@@ -13,8 +13,8 @@ out/
 .next/
 *.tsbuildinfo
 
-# Local Buildlapse runtime state
-.buildlapse/
+# Local BuildLabs runtime state
+.buildlabs/
 
 # Test / coverage
 coverage/

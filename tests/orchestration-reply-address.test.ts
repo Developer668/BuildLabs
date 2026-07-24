@@ -8,7 +8,7 @@ import {
 describe("ReplyAddressCodec", () => {
   it("round-trips an opaque project-scoped reply address", () => {
     const codec = new ReplyAddressCodec({
-      domain: "reply.buildlapse.example",
+      domain: "reply.buildlabs.example",
       secret: Buffer.alloc(32, 7),
     });
 
@@ -20,7 +20,7 @@ describe("ReplyAddressCodec", () => {
 
   it("rejects another domain or a tampered token", () => {
     const codec = new ReplyAddressCodec({
-      domain: "reply.buildlapse.example",
+      domain: "reply.buildlabs.example",
       secret: Buffer.alloc(32, 7),
     });
     const address = codec.create("11111111-2222-4333-8444-555555555555");
@@ -30,7 +30,7 @@ describe("ReplyAddressCodec", () => {
 
     expect(() => codec.parse(tampered)).toThrow(InvalidReplyAddressError);
     expect(() =>
-      codec.parse(address.replace("reply.buildlapse.example", "evil.example")),
+      codec.parse(address.replace("reply.buildlabs.example", "evil.example")),
     ).toThrow(InvalidReplyAddressError);
   });
 });

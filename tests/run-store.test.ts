@@ -392,8 +392,8 @@ describe("SqliteRunStore", () => {
 
 describe("SqliteRunStore migrations", () => {
   it("quarantines v2 passed output without deleting its source records", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "buildlapse-v2-migration-"));
-    const databasePath = join(directory, "buildlapse.sqlite");
+    const directory = await mkdtemp(join(tmpdir(), "buildlabs-v2-migration-"));
+    const databasePath = join(directory, "buildlabs.sqlite");
     const legacy = seedLegacyV2Pass(databasePath);
     let store: SqliteRunStore | undefined;
 

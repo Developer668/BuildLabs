@@ -32,8 +32,8 @@ const MAX_PROVIDER_STDOUT_BYTES = 2 * 1_024 * 1_024;
 const MAX_APP_DETAILS_BYTES = 64 * 1_024;
 const MAX_FLY_APP_NAME_LENGTH = 63;
 const FLY_MACHINES_API_ORIGIN = "https://api.machines.dev";
-const RELEASE_KEY_LABEL = "io.buildlapse.release-key";
-const ARTIFACT_SHA256_LABEL = "io.buildlapse.artifact-sha256";
+const RELEASE_KEY_LABEL = "io.buildlabs.release-key";
+const ARTIFACT_SHA256_LABEL = "io.buildlabs.artifact-sha256";
 const FLY_RELEASE_ID_METADATA = "fly_release_id";
 const FLY_RELEASE_VERSION_METADATA = "fly_release_version";
 const SERVABLE_MACHINE_STATES = new Set(["started", "stopped", "suspended"]);
@@ -46,7 +46,7 @@ const PROVIDER_IDENTIFIER_PATTERN = /^[A-Za-z0-9_-]{1,256}$/;
  * image_ref.digest, or release metadata; it never derives an image digest.
  */
 export const FLY_MACHINE_LIST_PROOF_REQUIREMENT =
-  "flyctl machine list --app <app> --json must return a JSON array whose every Machine contains id, instance_id, state, image_ref.digest, image_ref.labels[io.buildlapse.release-key], image_ref.labels[io.buildlapse.artifact-sha256], config.metadata.fly_release_id, and config.metadata.fly_release_version";
+  "flyctl machine list --app <app> --json must return a JSON array whose every Machine contains id, instance_id, state, image_ref.digest, image_ref.labels[io.buildlabs.release-key], image_ref.labels[io.buildlabs.artifact-sha256], config.metadata.fly_release_id, and config.metadata.fly_release_version";
 
 const FlyMachineSchema = z
   .object({
@@ -182,7 +182,7 @@ export class FlyCliDeploymentAdapter implements FlyDeploymentPort {
     this.#accessToken = validateSecret(options.accessToken);
     this.#organizationSlug = validateOrganizationSlug(options.organizationSlug);
     this.#appNamePrefix = validateAppNamePrefix(
-      options.appNamePrefix ?? "buildlapse",
+      options.appNamePrefix ?? "buildlabs",
     );
     this.#primaryRegion = validatePrimaryRegion(options.primaryRegion);
     this.#executable = validateExecutable(options.executable ?? "flyctl");
@@ -390,7 +390,7 @@ export class FlyCliDeploymentAdapter implements FlyDeploymentPort {
         "--dockerfile",
         join(artifact.directory, event.payload.artifact.dockerfilePath),
         "--image-label",
-        `buildlapse-${releaseKey.slice(0, 40)}`,
+        `buildlabs-${releaseKey.slice(0, 40)}`,
         "--label",
         `${RELEASE_KEY_LABEL}=${releaseKey}`,
         "--label",
@@ -739,10 +739,10 @@ export class FlyCliDeploymentAdapter implements FlyDeploymentPort {
       for (const machineId of before.machineIds) {
         const target = new URL(this.#healthPath, productionUrl);
         target.searchParams.set(
-          "__buildlapse_release",
+          "__buildlabs_release",
           targetRelease.releaseKey,
         );
-        target.searchParams.set("__buildlapse_attempt", String(attempt));
+        target.searchParams.set("__buildlabs_attempt", String(attempt));
         const timeoutSignal = AbortSignal.timeout(this.#healthRequestTimeoutMs);
         const requestSignal = signal
           ? AbortSignal.any([signal, timeoutSignal])
@@ -863,7 +863,7 @@ async function createTrustedFlyConfig(
 ): Promise<TrustedFlyConfig> {
   let directory: string | undefined;
   try {
-    directory = await mkdtemp(join(tmpdir(), "buildlapse-fly-config-"));
+    directory = await mkdtemp(join(tmpdir(), "buildlabs-fly-config-"));
     const configDirectory = directory;
     const path = join(configDirectory, "fly.toml");
     const contents = [

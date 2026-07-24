@@ -197,7 +197,7 @@ export interface RecordHeldOutComparisonInput {
 }
 
 function projectName(projectScopeId: string): string {
-  return `buildlapse-patch-${projectScopeId}`;
+  return `buildlabs-patch-${projectScopeId}`;
 }
 
 function datasetName(split: "heldout" | "train", bundleDigest: string): string {

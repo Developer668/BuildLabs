@@ -86,11 +86,11 @@ export class CustomerDashboardAccessCodec {
     }
     this.#loginSigningKey = deriveKey(
       options.secret,
-      "buildlapse-dashboard-login-signing-key-v1",
+      "buildlabs-dashboard-login-signing-key-v1",
     );
     this.#sessionSigningKey = deriveKey(
       options.secret,
-      "buildlapse-dashboard-session-signing-key-v1",
+      "buildlabs-dashboard-session-signing-key-v1",
     );
     this.#now = options.now ?? (() => new Date());
     this.#loginTtlSeconds = boundedTtl(
@@ -266,14 +266,14 @@ export class CustomerDashboardAccessCodec {
     const key =
       purpose === "login" ? this.#loginSigningKey : this.#sessionSigningKey;
     return createHmac("sha256", key)
-      .update(`buildlapse-dashboard-${purpose}-v1:${encodedGrant}`)
+      .update(`buildlabs-dashboard-${purpose}-v1:${encodedGrant}`)
       .digest()
       .subarray(0, 24);
   }
 
   #csrfToken(sessionToken: string): string {
     const signature = createHmac("sha256", this.#sessionSigningKey)
-      .update(`buildlapse-dashboard-csrf-v1:${sessionToken}`)
+      .update(`buildlabs-dashboard-csrf-v1:${sessionToken}`)
       .digest("base64url");
     return `csrf.v1.${signature}`;
   }

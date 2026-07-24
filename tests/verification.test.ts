@@ -103,7 +103,7 @@ describe("forbidden claim verification", () => {
     });
   });
 
-  it.each(["node_modules/served/claim.txt", ".buildlapse/claim.txt"])(
+  it.each(["node_modules/served/claim.txt", ".buildlabs/claim.txt"])(
     "rejects a frozen tree containing controller-reserved path %s",
     async (path) => {
       const workspace = await createWorkspace({
@@ -118,7 +118,7 @@ describe("forbidden claim verification", () => {
       expect(result).toEqual({
         exitCode: 2,
         stdout: "",
-        stderr: "BUILDLAPSE_FORBIDDEN_CLAIM_SCAN_ERROR_V1\n",
+        stderr: "BUILDLABS_FORBIDDEN_CLAIM_SCAN_ERROR_V1\n",
       });
     },
   );
@@ -415,14 +415,14 @@ describe("forbidden claim verification", () => {
 });
 
 async function createWorkspace(files: Record<string, string>): Promise<string> {
-  const workspace = await mkdtemp(join(tmpdir(), "buildlapse-verification-"));
+  const workspace = await mkdtemp(join(tmpdir(), "buildlabs-verification-"));
   temporaryDirectories.push(workspace);
   await git(workspace, ["init", "-q"]);
-  await git(workspace, ["config", "user.name", "Buildlapse Test"]);
+  await git(workspace, ["config", "user.name", "BuildLabs Test"]);
   await git(workspace, [
     "config",
     "user.email",
-    "buildlapse-test@example.invalid",
+    "buildlabs-test@example.invalid",
   ]);
   for (const [path, contents] of Object.entries(files)) {
     const absolutePath = join(workspace, ...path.split("/"));
@@ -491,7 +491,7 @@ function parseDiagnostics(stdout: string): {
   }>;
   truncated: boolean;
 } {
-  const prefix = "BUILDLAPSE_FORBIDDEN_CLAIM_MATCHES_V1 ";
+  const prefix = "BUILDLABS_FORBIDDEN_CLAIM_MATCHES_V1 ";
   expect(stdout.startsWith(prefix)).toBe(true);
   return JSON.parse(stdout.slice(prefix.length)) as {
     matches: Array<{

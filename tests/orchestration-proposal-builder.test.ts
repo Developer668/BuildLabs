@@ -125,7 +125,7 @@ describe("buildProposalVersion", () => {
           ],
           verification: {
             origin: "system_policy",
-            policyId: "buildlapse-proof-gate-v1",
+            policyId: "buildlabs-proof-gate-v1",
             buildCommand: "npm run build",
             testCommands: ["npm test"],
             previewCommand: "npm run start",
@@ -334,7 +334,7 @@ describe("buildProposalVersion", () => {
               ],
               verification: {
                 origin: "system_policy",
-                policyId: "buildlapse-proof-gate-v1",
+                policyId: "buildlabs-proof-gate-v1",
                 buildCommand: "npm run build",
                 testCommands: ["npm test"],
                 previewCommand: "npm start",
@@ -405,7 +405,7 @@ describe("buildProposalVersion", () => {
         ],
         verification: {
           origin: "system_policy",
-          policyId: "buildlapse-proof-gate-v1",
+          policyId: "buildlabs-proof-gate-v1",
           buildCommand: "npm run build",
           testCommands: ["npm test"],
           previewCommand: "npm start",
@@ -726,7 +726,7 @@ describe("buildProposalVersion", () => {
         ],
         verification: {
           origin: "system_policy",
-          policyId: "buildlapse-proof-gate-v1",
+          policyId: "buildlabs-proof-gate-v1",
           buildCommand: "npm run build",
           testCommands: ["npm test"],
           previewCommand: "npm start",
@@ -780,7 +780,7 @@ describe("buildProposalVersion", () => {
         ],
         verification: {
           origin: "system_policy",
-          policyId: "buildlapse-proof-gate-v1",
+          policyId: "buildlabs-proof-gate-v1",
           buildCommand: "npm run build",
           testCommands: ["npm test"],
           previewCommand: "npm start",

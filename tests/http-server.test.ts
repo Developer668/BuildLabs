@@ -61,7 +61,7 @@ describe("HTTP server", () => {
     frozenPreviewRequests = [];
     originalSandboxStopped = false;
     artifactDirectory = await mkdtemp(
-      join(tmpdir(), "buildlapse-http-artifacts-"),
+      join(tmpdir(), "buildlabs-http-artifacts-"),
     );
     store = new SqliteRunStore({ path: ":memory:" });
     shutdownOrder = [];
@@ -121,8 +121,8 @@ describe("HTTP server", () => {
     server = createHttpServer({
       config: loadConfig({
         NODE_ENV: "test",
-        BUILDLAPSE_INTERNAL_TOKEN: token,
-        BUILDLAPSE_ARTIFACT_DIR: artifactDirectory,
+        BUILDLABS_INTERNAL_TOKEN: token,
+        BUILDLABS_ARTIFACT_DIR: artifactDirectory,
         DAYTONA_API_KEY: "d".repeat(20),
         FIREWORKS_API_KEY: "f".repeat(20),
         BRAINTRUST_API_KEY: "b".repeat(20),
@@ -335,8 +335,8 @@ describe("HTTP server", () => {
   it("fails sponsor-complete readiness when ElevenLabs is unconfigured", async () => {
     const config = loadConfig({
       NODE_ENV: "test",
-      BUILDLAPSE_INTERNAL_TOKEN: token,
-      BUILDLAPSE_ARTIFACT_DIR: artifactDirectory,
+      BUILDLABS_INTERNAL_TOKEN: token,
+      BUILDLABS_ARTIFACT_DIR: artifactDirectory,
       DAYTONA_API_KEY: "d".repeat(20),
       FIREWORKS_API_KEY: "f".repeat(20),
       BRAINTRUST_API_KEY: "b".repeat(20),

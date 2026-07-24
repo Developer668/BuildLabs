@@ -135,7 +135,7 @@ describe("verifier dependency bootstrap", () => {
   });
 
   async function workspace(): Promise<string> {
-    const root = await mkdtemp(join(tmpdir(), "buildlapse-bootstrap-"));
+    const root = await mkdtemp(join(tmpdir(), "buildlabs-bootstrap-"));
     roots.push(root);
     await mkdir(join(root, "bin"));
     return root;

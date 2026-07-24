@@ -51,7 +51,7 @@ const ProofVerifierSchema = z.discriminatedUnion("kind", [
 
 export const RecordedProofSummarySchema = z
   .object({
-    schemaVersion: z.literal("buildlapse-proof-summary-v1"),
+    schemaVersion: z.literal("buildlabs-proof-summary-v1"),
     evidenceBoundary: z.string().min(1).max(500),
     project: z
       .object({
@@ -65,7 +65,7 @@ export const RecordedProofSummarySchema = z
         version: z.number().int().positive(),
         digest: OrchestrationSha256Schema,
         proposalDigest: OrchestrationSha256Schema,
-        verificationPolicy: z.literal("buildlapse-proof-gate-v1"),
+        verificationPolicy: z.literal("buildlabs-proof-gate-v1"),
         configuredChecks: z
           .object({
             buildCommand: z.string().min(1).max(512),
@@ -151,7 +151,7 @@ export interface RecordedProofEvidenceSource {
         verifiers: RecordedContractVerifier[];
       }>;
       verification: {
-        policyId: "buildlapse-proof-gate-v1";
+        policyId: "buildlabs-proof-gate-v1";
         buildCommand: string;
         testCommands: string[];
         previewCommand: string;
@@ -331,7 +331,7 @@ export function buildRecordedProofSummary(
   let summary: RecordedProofSummary;
   try {
     summary = RecordedProofSummarySchema.parse({
-      schemaVersion: "buildlapse-proof-summary-v1",
+      schemaVersion: "buildlabs-proof-summary-v1",
       evidenceBoundary:
         "This page reports the exact recorded candidate.proven receipt, configured contract checks, and verified Fly deployment receipt. It does not claim checks outside that recorded evidence.",
       project: {

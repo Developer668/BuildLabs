@@ -56,7 +56,7 @@ describe("compileAcceptanceContract", () => {
       ],
       verification: {
         origin: "system_policy",
-        policyId: "buildlapse-proof-gate-v1",
+        policyId: "buildlabs-proof-gate-v1",
         buildCommand: "npm run build",
         testCommands: ["npm test"],
         previewCommand: "npm run start",
@@ -120,7 +120,7 @@ describe("compileAcceptanceContract", () => {
       ],
       verification: {
         origin: "system_policy",
-        policyId: "buildlapse-proof-gate-v1",
+        policyId: "buildlabs-proof-gate-v1",
         buildCommand: "npm run build",
         testCommands: ["npm test"],
         previewCommand: "npm run start",

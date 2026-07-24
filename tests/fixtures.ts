@@ -315,7 +315,7 @@ export function artifact(runId: string, revisionHash: string): ProvenArtifact {
     sha256: digestJson({ runId, revisionHash }),
     sizeBytes: 100,
     dockerfilePath: "Dockerfile",
-    daytonaSnapshot: `buildlapse-${runId.slice(0, 8)}-${revisionHash.slice(0, 12)}`,
+    daytonaSnapshot: `buildlabs-${runId.slice(0, 8)}-${revisionHash.slice(0, 12)}`,
     createdAt: NOW,
   };
 }

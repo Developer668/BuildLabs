@@ -1135,7 +1135,7 @@ class FakeSandbox implements SandboxSession {
 
   async exportWorkspace(revision: FrozenRevision): Promise<ExportedWorkspace> {
     expect(revision).toEqual(this.revision);
-    const root = await mkdtemp(join(tmpdir(), "buildlapse-test-"));
+    const root = await mkdtemp(join(tmpdir(), "buildlabs-test-"));
     const directory = join(root, "workspace");
     const archivePath = join(root, "workspace.tar");
     const archiveBytes = Buffer.from(this.sourceBytes);

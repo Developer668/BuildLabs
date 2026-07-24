@@ -11,7 +11,7 @@ import { createReceiptBase } from "./receipts.js";
 
 export const DOCKERFILE_VERIFICATION_COMMAND =
   "test -s Dockerfile && grep -Eq '^[[:space:]]*FROM[[:space:]]+' Dockerfile";
-export const CONTAINER_IMAGE_TAG = "buildlapse-proof";
+export const CONTAINER_IMAGE_TAG = "buildlabs-proof";
 export const CONTAINER_BUILD_COMMAND = `docker build --tag ${CONTAINER_IMAGE_TAG} .`;
 export type VerificationPhase = "commands" | "delivery";
 
@@ -41,7 +41,7 @@ const MAX_FORBIDDEN_CLAIM_CHARACTERS = 500;
 const MAX_ENCODED_PAYLOADS = 256;
 const MAX_DECODED_PAYLOAD_BYTES = 4 * 1024 * 1024;
 const RESERVED_TRACKED_DIRECTORIES = new Set([
-  ".buildlapse",
+  ".buildlabs",
   ".git",
   "node_modules",
 ]);
@@ -443,7 +443,7 @@ function main() {
 
   if (locations.size > 0) {
     process.stdout.write(
-      "BUILDLAPSE_FORBIDDEN_CLAIM_MATCHES_V1 " +
+      "BUILDLABS_FORBIDDEN_CLAIM_MATCHES_V1 " +
         JSON.stringify({ matches: diagnostics, truncated: omitted }) +
         "\n",
     );
@@ -454,7 +454,7 @@ function main() {
 try {
   main();
 } catch {
-  process.stderr.write("BUILDLAPSE_FORBIDDEN_CLAIM_SCAN_ERROR_V1\n");
+  process.stderr.write("BUILDLABS_FORBIDDEN_CLAIM_SCAN_ERROR_V1\n");
   process.exitCode = 2;
 }
 `;

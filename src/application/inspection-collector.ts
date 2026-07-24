@@ -40,7 +40,7 @@ const SOURCE_EXTENSIONS = new Set([
 ]);
 
 const EXCLUDED_SEGMENTS = new Set([
-  ".buildlapse",
+  ".buildlabs",
   ".git",
   ".next",
   ".nuxt",

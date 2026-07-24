@@ -41,7 +41,7 @@ describe("orchestration runtime configuration", () => {
     expect(config.ORCHESTRATION_MAIL_DELIVERY_DEADLINE_MS).toBe(
       6 * 60 * 60 * 1_000,
     );
-    expect(config.FLY_ORG_SLUG).toBe("buildlapse-production");
+    expect(config.FLY_ORG_SLUG).toBe("buildlabs-production");
     expect(config.FLY_PRIMARY_REGION).toBe("sjc");
   });
 
@@ -132,11 +132,11 @@ describe("orchestration runtime configuration", () => {
       NODE_ENV: "production",
       STRIPE_SECRET_KEY: "sk_live_real-key-material-for-production",
       STRIPE_EXPECTED_LIVEMODE: "true",
-      ORCHESTRATION_REPLY_DOMAIN: "reply.buildlapse.com",
-      ORCHESTRATION_FROM_EMAIL: "Buildlapse <projects@buildlapse.com>",
-      ORCHESTRATION_PUBLIC_BASE_URL: "https://orchestrator.buildlapse.com",
-      STRIPE_SUCCESS_URL: "https://buildlapse.com/payment/success",
-      STRIPE_CANCEL_URL: "https://buildlapse.com/payment/cancel",
+      ORCHESTRATION_REPLY_DOMAIN: "reply.buildlabs.com",
+      ORCHESTRATION_FROM_EMAIL: "BuildLabs <projects@buildlabs.com>",
+      ORCHESTRATION_PUBLIC_BASE_URL: "https://orchestrator.buildlabs.com",
+      STRIPE_SUCCESS_URL: "https://buildlabs.com/payment/success",
+      STRIPE_CANCEL_URL: "https://buildlabs.com/payment/cancel",
     };
     expect(() => loadOrchestrationConfig(production)).not.toThrow();
     expect(() =>
@@ -155,7 +155,7 @@ describe("orchestration runtime configuration", () => {
     expect(() =>
       loadOrchestrationConfig({
         ...production,
-        STRIPE_SUCCESS_URL: "https://buildlapse.invalid/payment/success",
+        STRIPE_SUCCESS_URL: "https://buildlabs.invalid/payment/success",
       }),
     ).toThrow();
     expect(() =>
@@ -169,7 +169,7 @@ describe("orchestration runtime configuration", () => {
   it("requires durable build state and HTTPS provider endpoints", () => {
     const buildEnvironment = {
       NODE_ENV: "production",
-      BUILDLAPSE_INTERNAL_TOKEN: "b".repeat(32),
+      BUILDLABS_INTERNAL_TOKEN: "b".repeat(32),
       DAYTONA_API_KEY: "d".repeat(20),
       FIREWORKS_API_KEY: "f".repeat(20),
       BRAINTRUST_API_KEY: "b".repeat(20),
@@ -179,7 +179,7 @@ describe("orchestration runtime configuration", () => {
     expect(() =>
       loadConfig({
         ...buildEnvironment,
-        BUILDLAPSE_DATABASE_PATH: ":memory:",
+        BUILDLABS_DATABASE_PATH: ":memory:",
       }),
     ).toThrow();
     expect(() =>
@@ -493,26 +493,26 @@ function validEnvironment(): NodeJS.ProcessEnv {
     ORCHESTRATION_ENCRYPTION_KEY_BASE64: Buffer.alloc(32, 1).toString("base64"),
     ORCHESTRATION_INTERNAL_TOKEN:
       "orchestration-internal-token-with-32-characters",
-    ORCHESTRATION_REPLY_DOMAIN: "reply.buildlapse.example",
+    ORCHESTRATION_REPLY_DOMAIN: "reply.buildlabs.example",
     ORCHESTRATION_REPLY_SECRET_BASE64: Buffer.alloc(32, 2).toString("base64"),
-    ORCHESTRATION_FROM_EMAIL: "Buildlapse <projects@buildlapse.example>",
-    ORCHESTRATION_PUBLIC_BASE_URL: "https://orchestrator.buildlapse.example",
+    ORCHESTRATION_FROM_EMAIL: "BuildLabs <projects@buildlabs.example>",
+    ORCHESTRATION_PUBLIC_BASE_URL: "https://orchestrator.buildlabs.example",
     FIREWORKS_API_KEY: "fireworks-key-with-enough-characters",
     BRAINTRUST_API_KEY: "braintrust-key-with-enough-characters",
     BRAINTRUST_API_URL: "https://api.braintrust.dev",
     BRAINTRUST_APP_URL: "https://www.braintrust.dev",
-    BRAINTRUST_PROJECT_NAME: "Buildlapse",
+    BRAINTRUST_PROJECT_NAME: "BuildLabs",
     STRIPE_SECRET_KEY: "sk_test_fixture_with_enough_characters",
     STRIPE_WEBHOOK_SECRET: "whsec_fixture_with_enough_characters",
-    STRIPE_SUCCESS_URL: "https://buildlapse.example/payment/success",
-    STRIPE_CANCEL_URL: "https://buildlapse.example/payment/cancel",
+    STRIPE_SUCCESS_URL: "https://buildlabs.example/payment/success",
+    STRIPE_CANCEL_URL: "https://buildlabs.example/payment/cancel",
     STRIPE_EXPECTED_LIVEMODE: "false",
     RESEND_API_KEY: "resend-key-with-enough-characters",
     RESEND_WEBHOOK_SECRET: "resend-webhook-secret-enough-characters",
     BUILD_BACKEND_INTERNAL_TOKEN:
       "build-backend-internal-token-with-enough-characters",
     FLY_ACCESS_TOKEN: "fly-access-token-with-enough-characters",
-    FLY_ORG_SLUG: "buildlapse-production",
+    FLY_ORG_SLUG: "buildlabs-production",
     FLY_PRIMARY_REGION: "sjc",
   };
 }

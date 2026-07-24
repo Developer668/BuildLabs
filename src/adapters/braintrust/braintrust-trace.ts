@@ -80,7 +80,7 @@ export class BraintrustTrace implements TracePort {
         }
       },
       {
-        name: "buildlapse.build-agent.run",
+        name: "buildlabs.build-agent.run",
         type: "task",
         event: {
           input: {
@@ -130,7 +130,7 @@ export class BraintrustTrace implements TracePort {
         }
       },
       {
-        name: "buildlapse.studio.voice-turn",
+        name: "buildlabs.studio.voice-turn",
         type: "task",
         event: {
           input: prepareStudioTraceInput(input),
@@ -175,7 +175,7 @@ export class BraintrustTrace implements TracePort {
         }
       },
       {
-        name: `buildlapse.studio.webhook.${safeInput.tool}`,
+        name: `buildlabs.studio.webhook.${safeInput.tool}`,
         type: "tool",
         event: {
           input: safeInput,

@@ -149,7 +149,7 @@ function heldOutComparison(
       experimentId: "experiment-base",
     },
     candidate: {
-      modelResource: "accounts/buildlapse/models/patch-model-v1",
+      modelResource: "accounts/buildlabs/models/patch-model-v1",
       experimentId: "experiment-candidate",
     },
     comparisonBaseExperimentId: "experiment-base",

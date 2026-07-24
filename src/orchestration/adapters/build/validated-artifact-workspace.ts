@@ -42,7 +42,7 @@ export async function validateArtifactWorkspace(
   const parent = await validateTemporaryParent(
     request.temporaryParentDirectory ?? tmpdir(),
   );
-  const root = await mkdtemp(join(parent, "buildlapse-proven-"));
+  const root = await mkdtemp(join(parent, "buildlabs-proven-"));
   const archivePath = join(root, "candidate.tar.gz");
   const directory = join(root, "workspace");
   try {

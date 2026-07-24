@@ -1,7 +1,7 @@
 export interface WebsiteResearchAuthorization {
   /**
    * This URL came from the caller/customer, rather than discovery or
-   * prospecting performed by Buildlapse.
+   * prospecting performed by BuildLabs.
    */
   callerProvided: true;
   /**

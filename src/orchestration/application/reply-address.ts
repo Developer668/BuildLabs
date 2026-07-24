@@ -84,7 +84,7 @@ export class ReplyAddressCodec {
 
   #signature(encodedProject: string): Buffer {
     return createHmac("sha256", this.#secret)
-      .update(`buildlapse-reply-v1:${encodedProject}`)
+      .update(`buildlabs-reply-v1:${encodedProject}`)
       .digest()
       .subarray(0, 12);
   }

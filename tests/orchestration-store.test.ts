@@ -126,7 +126,7 @@ function proposalFixture(projectId: string) {
     ],
     verification: {
       origin: "system_policy",
-      policyId: "buildlapse-proof-gate-v1",
+      policyId: "buildlabs-proof-gate-v1",
       buildCommand: "npm run build",
       testCommands: ["npm test"],
       previewCommand: "npm start",
@@ -249,7 +249,7 @@ describe("SqliteOrchestrationStore", () => {
 
   it("does not persist sensitive aggregate plaintext in a file-backed database", () => {
     store.close();
-    const directory = mkdtempSync(join(tmpdir(), "buildlapse-orchestration-"));
+    const directory = mkdtempSync(join(tmpdir(), "buildlabs-orchestration-"));
     const path = join(directory, "orchestration.sqlite");
     try {
       store = new SqliteOrchestrationStore({
@@ -392,7 +392,7 @@ describe("SqliteOrchestrationStore", () => {
 
   it("prevents mutation or deletion of retained webhook security receipts", () => {
     store.close();
-    const directory = mkdtempSync(join(tmpdir(), "buildlapse-security-audit-"));
+    const directory = mkdtempSync(join(tmpdir(), "buildlabs-security-audit-"));
     const path = join(directory, "orchestration.sqlite");
     let database: DatabaseSync | undefined;
     try {
@@ -543,7 +543,7 @@ describe("SqliteOrchestrationStore", () => {
     const created = store.createProject(createInput()).project;
     const eventDigest = sha256("passwordless dashboard exchange");
     const inbox = {
-      provider: "passwordless_email_buildlapse_dashboard",
+      provider: "passwordless_email_buildlabs_dashboard",
       eventId: "dashboard-login-event-001",
       digest: eventDigest,
     };
@@ -560,7 +560,7 @@ describe("SqliteOrchestrationStore", () => {
         actor: "provider",
         payload: {
           status: created.status,
-          provider: "buildlapse_dashboard",
+          provider: "buildlabs_dashboard",
           providerEventDigest: eventDigest,
           correlationId: inbox.eventId,
         },
@@ -585,7 +585,7 @@ describe("SqliteOrchestrationStore", () => {
           actor: "provider",
           payload: {
             status: saved.status,
-            provider: "buildlapse_dashboard",
+            provider: "buildlabs_dashboard",
             providerEventDigest: eventDigest,
             correlationId: inbox.eventId,
           },
@@ -608,7 +608,7 @@ describe("SqliteOrchestrationStore", () => {
           actor: "provider",
           payload: {
             status: saved.status,
-            provider: "buildlapse_dashboard",
+            provider: "buildlabs_dashboard",
             providerEventDigest: eventDigest,
             correlationId: inbox.eventId,
           },
@@ -626,7 +626,7 @@ describe("SqliteOrchestrationStore", () => {
 
     const conflictingDigest = sha256("second passwordless exchange");
     const secondInbox = {
-      provider: "passwordless_email_buildlapse_dashboard",
+      provider: "passwordless_email_buildlabs_dashboard",
       eventId: "dashboard-login-event-002",
       digest: conflictingDigest,
     };
@@ -639,7 +639,7 @@ describe("SqliteOrchestrationStore", () => {
           actor: "provider",
           payload: {
             status: saved.status,
-            provider: "buildlapse_dashboard",
+            provider: "buildlabs_dashboard",
             providerEventDigest: conflictingDigest,
             correlationId: secondInbox.eventId,
           },
@@ -660,7 +660,7 @@ describe("SqliteOrchestrationStore", () => {
 
   it("rejects the same dashboard login across independent store connections", () => {
     const directory = mkdtempSync(
-      join(tmpdir(), "buildlapse-dashboard-login-race-"),
+      join(tmpdir(), "buildlabs-dashboard-login-race-"),
     );
     const path = join(directory, "orchestration.sqlite");
     const primary = new SqliteOrchestrationStore({
@@ -678,7 +678,7 @@ describe("SqliteOrchestrationStore", () => {
       const replicaView = replica.getProject(created.projectId)!;
       const eventDigest = sha256("cross-connection dashboard exchange");
       const inbox = {
-        provider: "passwordless_email_buildlapse_dashboard",
+        provider: "passwordless_email_buildlabs_dashboard",
         eventId: "dashboard-login-cross-connection-001",
         digest: eventDigest,
       };
@@ -695,7 +695,7 @@ describe("SqliteOrchestrationStore", () => {
           actor: "provider",
           payload: {
             status: created.status,
-            provider: "buildlapse_dashboard",
+            provider: "buildlabs_dashboard",
             providerEventDigest: eventDigest,
             correlationId: inbox.eventId,
           },
@@ -713,7 +713,7 @@ describe("SqliteOrchestrationStore", () => {
             actor: "provider",
             payload: {
               status: replicaView.status,
-              provider: "buildlapse_dashboard",
+              provider: "buildlabs_dashboard",
               providerEventDigest: eventDigest,
               correlationId: inbox.eventId,
             },
@@ -921,7 +921,7 @@ describe("SqliteOrchestrationStore", () => {
 
   it("backfills pending dashboard login reconciliation when schema v6 is applied", () => {
     const directory = mkdtempSync(
-      join(tmpdir(), "buildlapse-dashboard-login-migration-"),
+      join(tmpdir(), "buildlabs-dashboard-login-migration-"),
     );
     const path = join(directory, "orchestration.sqlite");
     const legacy = new SqliteOrchestrationStore({

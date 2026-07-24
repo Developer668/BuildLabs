@@ -67,9 +67,9 @@ const CUSTOMER_DASHBOARD_ACCESS_PATH =
   "/v1/orchestration/customer-dashboard/access";
 const CUSTOMER_DASHBOARD_ACCESS_REQUEST_PATH =
   "/v1/orchestration/customer-dashboard/access/requests";
-const CUSTOMER_DASHBOARD_COOKIE = "buildlapse_dashboard_session";
-const CUSTOMER_DASHBOARD_CSRF_COOKIE = "buildlapse_dashboard_csrf";
-const CUSTOMER_DASHBOARD_CSRF_HEADER = "x-buildlapse-csrf";
+const CUSTOMER_DASHBOARD_COOKIE = "buildlabs_dashboard_session";
+const CUSTOMER_DASHBOARD_CSRF_COOKIE = "buildlabs_dashboard_csrf";
+const CUSTOMER_DASHBOARD_CSRF_HEADER = "x-buildlabs-csrf";
 
 const ProviderSchema = z
   .string()
@@ -552,7 +552,7 @@ export function createOrchestrationHttpServer(
       await options.controller.verifyEmailOwnership({
         projectId: project.projectId,
         method: "passwordless_email",
-        provider: "buildlapse_dashboard",
+        provider: "buildlabs_dashboard",
         providerEventId,
         eventDigest,
         email: storedEmail.value,
@@ -1203,7 +1203,7 @@ function renderCustomerDashboardAccessExchange(scriptNonce: string): string {
     "<!doctype html>",
     '<html lang="en"><head><meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width,initial-scale=1">',
-    "<title>Buildlapse</title>",
+    "<title>BuildLabs</title>",
     "<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f7f7f5;color:#181817;font:16px/1.5 system-ui,sans-serif}main{max-width:32rem;padding:2rem;text-align:center}h1{font-size:1.25rem;margin:0 0 .5rem}p{margin:0;color:#555}</style>",
     "</head><body><main>",
     "<h1>Opening your project</h1>",

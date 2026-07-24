@@ -26,14 +26,14 @@ const ConfigSchema = z
       .default("development"),
     HOST: z.string().default("127.0.0.1"),
     PORT: z.coerce.number().int().min(1).max(65_535).default(3_000),
-    BUILDLAPSE_DATABASE_PATH: z
+    BUILDLABS_DATABASE_PATH: z
       .string()
       .min(1)
-      .default(".buildlapse/build-agent.db"),
-    BUILDLAPSE_ARTIFACT_DIR: z.string().min(1).default(".buildlapse/artifacts"),
-    BUILDLAPSE_INTERNAL_TOKEN: z.string().min(32).optional(),
-    BUILDLAPSE_SLOT_COUNT: z.coerce.number().int().min(1).max(4).default(4),
-    BUILDLAPSE_LEASE_MILLISECONDS: z.coerce
+      .default(".buildlabs/build-agent.db"),
+    BUILDLABS_ARTIFACT_DIR: z.string().min(1).default(".buildlabs/artifacts"),
+    BUILDLABS_INTERNAL_TOKEN: z.string().min(32).optional(),
+    BUILDLABS_SLOT_COUNT: z.coerce.number().int().min(1).max(4).default(4),
+    BUILDLABS_LEASE_MILLISECONDS: z.coerce
       .number()
       .int()
       .min(10_000)
@@ -48,7 +48,7 @@ const ConfigSchema = z
       .string()
       .min(1)
       .max(256)
-      .default("buildlapse-dind-browser-v2"),
+      .default("buildlabs-dind-browser-v2"),
     DAYTONA_OTEL_ENABLED: z
       .enum(["true", "false"])
       .default("false")
@@ -78,7 +78,7 @@ const ConfigSchema = z
     BRAINTRUST_APP_URL: SecureServiceUrlSchema.default(
       "https://www.braintrust.dev",
     ),
-    BRAINTRUST_PROJECT_NAME: z.string().min(1).default("Buildlapse"),
+    BRAINTRUST_PROJECT_NAME: z.string().min(1).default("BuildLabs"),
     ELEVENLABS_API_KEY: z.string().min(20).optional(),
     ELEVENLABS_SPEECH_ENGINE_ID: z
       .string()
@@ -104,23 +104,23 @@ const ConfigSchema = z
     const loopbackHosts = new Set(["127.0.0.1", "::1", "localhost"]);
     if (
       config.NODE_ENV === "production" &&
-      config.BUILDLAPSE_DATABASE_PATH === ":memory:"
+      config.BUILDLABS_DATABASE_PATH === ":memory:"
     ) {
       context.addIssue({
         code: "custom",
         message: "Production build state requires durable SQLite storage",
-        path: ["BUILDLAPSE_DATABASE_PATH"],
+        path: ["BUILDLABS_DATABASE_PATH"],
       });
     }
     if (
       (config.NODE_ENV === "production" || !loopbackHosts.has(config.HOST)) &&
-      !config.BUILDLAPSE_INTERNAL_TOKEN
+      !config.BUILDLABS_INTERNAL_TOKEN
     ) {
       context.addIssue({
         code: "custom",
         message:
-          "BUILDLAPSE_INTERNAL_TOKEN is required in production or on a non-loopback host",
-        path: ["BUILDLAPSE_INTERNAL_TOKEN"],
+          "BUILDLABS_INTERNAL_TOKEN is required in production or on a non-loopback host",
+        path: ["BUILDLABS_INTERNAL_TOKEN"],
       });
     }
     if (

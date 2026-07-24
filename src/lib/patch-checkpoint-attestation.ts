@@ -82,7 +82,7 @@ function trainingBundleSignature(
   key: PatchCheckpointAttestationKey,
 ): string {
   return createHmac("sha256", keyBytes(key))
-    .update("buildlapse.patch-model.training-bundle-attestation.v1")
+    .update("buildlabs.patch-model.training-bundle-attestation.v1")
     .update("\0")
     .update(canonicalJson(body))
     .digest("hex");
@@ -166,7 +166,7 @@ function sign(
   key: PatchCheckpointAttestationKey,
 ): string {
   return createHmac("sha256", keyBytes(key))
-    .update("buildlapse.patch-model.checkpoint-attestation.v1")
+    .update("buildlabs.patch-model.checkpoint-attestation.v1")
     .update("\0")
     .update(canonicalJson(body))
     .digest("hex");
@@ -236,7 +236,7 @@ function comparisonSignature(
   key: PatchCheckpointAttestationKey,
 ): string {
   return createHmac("sha256", keyBytes(key))
-    .update("buildlapse.patch-model.heldout-comparison.v1")
+    .update("buildlabs.patch-model.heldout-comparison.v1")
     .update("\0")
     .update(canonicalJson(body))
     .digest("hex");

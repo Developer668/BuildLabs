@@ -36,7 +36,7 @@ import type {
 } from "../../ports/index.js";
 
 const GIT_EXCLUDES = [
-  ".buildlapse/",
+  ".buildlabs/",
   ".next/",
   ".nuxt/",
   ".output/",
@@ -50,10 +50,10 @@ const MAX_ARCHIVE_ENTRIES = 10_000;
 const MAX_ARCHIVE_FILE_BYTES = 50 * 1_024 * 1_024;
 const MAX_COMMAND_ENVELOPE_BYTES = 1_048_576;
 const COMMAND_ENVELOPE_OVERHEAD_BYTES = 512;
-const COMMAND_ENVELOPE_MAGIC = "BUILDLAPSE_COMMAND_RESULT_V1";
+const COMMAND_ENVELOPE_MAGIC = "BUILDLABS_COMMAND_RESULT_V1";
 const RENDER_INSPECTOR_PATH =
-  "/tmp/buildlapse-controller-render-inspector-v2.cjs";
-const PLAYWRIGHT_NODE_PATH = "/opt/buildlapse-render-inspector/node_modules";
+  "/tmp/buildlabs-controller-render-inspector-v2.cjs";
+const PLAYWRIGHT_NODE_PATH = "/opt/buildlabs-render-inspector/node_modules";
 const MAX_RENDER_PATHS = MAX_RENDERED_ROUTE_COUNT;
 const MAX_RENDER_TOTAL_TIMEOUT_MILLISECONDS = 120_000;
 const RENDER_COMMAND_ENVELOPE_BYTES = 12 * 1_024 * 1_024;
@@ -887,7 +887,7 @@ function collectCandidateStateInIsolatedWorld() {
       switch (inputType) {
         case "text":
         case "search":
-          return "Buildlapse proof";
+          return "BuildLabs proof";
         case "email":
           return "proof@example.invalid";
         case "tel":
@@ -895,7 +895,7 @@ function collectCandidateStateInIsolatedWorld() {
         case "url":
           return "https://example.invalid";
         case "password":
-          return "BuildlapseProof1!";
+          return "BuildLabsProof1!";
         case "number":
           return "1";
         case "date":
@@ -1016,13 +1016,13 @@ function collectCandidateStateInIsolatedWorld() {
         }
         if (tagName === "textarea") {
           if (
-            textareaValueGetter.call(control) !== "Buildlapse proof" &&
+            textareaValueGetter.call(control) !== "BuildLabs proof" &&
             !nextField
           ) {
             nextField = {
               element: control,
               kind: "fill",
-              value: "Buildlapse proof"
+              value: "BuildLabs proof"
             };
           }
           continue;
@@ -1274,10 +1274,10 @@ function collectCandidateStateInIsolatedWorld() {
             });
           }
         } else if (tagName === "textarea") {
-          if (textareaValueGetter.call(element) !== "Buildlapse proof") {
+          if (textareaValueGetter.call(element) !== "BuildLabs proof") {
             addInteraction(element, {
               kind: "fill",
-              value: "Buildlapse proof",
+              value: "BuildLabs proof",
               terminal: false,
               requireObservable: true
             });
@@ -1677,7 +1677,7 @@ async function collectVisibleText(
   baselineBuffer,
   deadline
 ) {
-  const marker = "data-buildlapse-text-" + randomBytes(12).toString("hex");
+  const marker = "data-buildlabs-text-" + randomBytes(12).toString("hex");
   const { styleSheetId } = await instrumentation.session.send(
     "CSS.createStyleSheet",
     {
@@ -1777,7 +1777,7 @@ async function prepareProofInstrumentation(page) {
       {
         frameId: frameTree.frame.id,
         worldName:
-          "buildlapse-proof-" + randomBytes(12).toString("hex")
+          "buildlabs-proof-" + randomBytes(12).toString("hex")
       }
     );
     const { root } = await session.send("DOM.getDocument", {
@@ -2819,7 +2819,7 @@ main().catch((error) => {
 });
 `;
 type DaytonaSandboxRole = "builder" | "verifier-commands" | "verifier-delivery";
-const PROVEN_CONTAINER_IMAGE_TAG = "buildlapse-proof";
+const PROVEN_CONTAINER_IMAGE_TAG = "buildlabs-proof";
 const MIN_FROZEN_PREVIEW_TTL_SECONDS = 60;
 const MAX_FROZEN_PREVIEW_TTL_SECONDS = 7 * 24 * 60 * 60;
 const FROZEN_PREVIEW_CLEANUP_GRACE_SECONDS = 5;
@@ -2908,7 +2908,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
         const baseWorkDir = await resolveSandboxWorkDir(sandbox, signal);
         const verifierWorkDir = posix.join(
           baseWorkDir,
-          `.buildlapse-verifier-${purpose}-${revision.sourceDigest.slice(0, 16)}`,
+          `.buildlabs-verifier-${purpose}-${revision.sourceDigest.slice(0, 16)}`,
         );
         const session = new DaytonaSandboxSession(
           sandbox,
@@ -3040,8 +3040,8 @@ export class DaytonaSandboxProvider implements SandboxProvider {
               name: sandboxName,
               snapshot: request.snapshotId,
               envVars: {
-                BUILDLAPSE_RUN_ID: request.runId,
-                BUILDLAPSE_PREVIEW_EVENT_ID: request.eventId,
+                BUILDLABS_RUN_ID: request.runId,
+                BUILDLABS_PREVIEW_EVENT_ID: request.eventId,
                 CI: "true",
               },
               labels: {
@@ -3075,17 +3075,17 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       request.snapshotId,
       identityLabels,
     );
-    const priorEffectKey = previewSandbox.labels["buildlapse.effect-key"];
+    const priorEffectKey = previewSandbox.labels["buildlabs.effect-key"];
     if (
-      priorEffectKey === effectLabels["buildlapse.effect-key"] &&
-      previewSandbox.labels["buildlapse.effect-input"] !==
-        effectLabels["buildlapse.effect-input"]
+      priorEffectKey === effectLabels["buildlabs.effect-key"] &&
+      previewSandbox.labels["buildlabs.effect-input"] !==
+        effectLabels["buildlabs.effect-input"]
     ) {
       throw new Error(
         "The frozen preview idempotency key was reused with different input",
       );
     }
-    if (priorEffectKey !== effectLabels["buildlapse.effect-key"]) {
+    if (priorEffectKey !== effectLabels["buildlabs.effect-key"]) {
       await withAbort(
         previewSandbox.setLabels({
           ...previewSandbox.labels,
@@ -3207,8 +3207,8 @@ export class DaytonaSandboxProvider implements SandboxProvider {
         language: assignment.sandbox.language,
         ...(snapshot ? { snapshot } : {}),
         envVars: {
-          BUILDLAPSE_RUN_ID: runId,
-          BUILDLAPSE_SANDBOX_ROLE: role,
+          BUILDLABS_RUN_ID: runId,
+          BUILDLABS_SANDBOX_ROLE: role,
           CI: "true",
           DAYTONA_SANDBOX_OTEL_EXTRA_LABELS: daytonaTelemetryLabels(
             runId,
@@ -3217,10 +3217,10 @@ export class DaytonaSandboxProvider implements SandboxProvider {
           ),
         },
         labels: {
-          "buildlapse.run-id": runId,
-          "buildlapse.project-id": assignment.projectId,
-          "buildlapse.candidate-id": assignment.candidateId,
-          "buildlapse.role": role,
+          "buildlabs.run-id": runId,
+          "buildlabs.project-id": assignment.projectId,
+          "buildlabs.candidate-id": assignment.candidateId,
+          "buildlabs.role": role,
         },
         public: false,
         autoStopInterval: assignment.sandbox.autoStopMinutes,
@@ -3246,10 +3246,10 @@ export function daytonaTelemetryLabels(
   role: DaytonaSandboxRole = "builder",
 ): string {
   const labels: Array<readonly [string, string]> = [
-    ["buildlapse_run_id", runId],
-    ["buildlapse_project_id", assignment.projectId],
-    ["buildlapse_candidate_id", assignment.candidateId],
-    ["buildlapse_sandbox_role", role],
+    ["buildlabs_run_id", runId],
+    ["buildlabs_project_id", assignment.projectId],
+    ["buildlabs_candidate_id", assignment.candidateId],
+    ["buildlabs_sandbox_role", role],
   ];
   return labels
     .map(([key, value]) => `${key}=${daytonaTelemetryLabelValue(value)}`)
@@ -3317,9 +3317,9 @@ async function verifyFrozenPreviewReadiness(input: {
         },
         signal: combinedSignal,
       });
-      const revisionMarker = response.headers.get("x-buildlapse-revision");
+      const revisionMarker = response.headers.get("x-buildlabs-revision");
       const artifactMarker = response.headers.get(
-        "x-buildlapse-artifact-sha256",
+        "x-buildlabs-artifact-sha256",
       );
       await response.body?.cancel().catch(() => undefined);
       if (response.status >= 200 && response.status < 300) {
@@ -3390,24 +3390,24 @@ function frozenPreviewIdentityLabels(
   request: FrozenPreviewMaterializationRequest,
 ): Record<string, string> {
   return {
-    "buildlapse.purpose": "proven-preview",
-    "buildlapse.run-id": request.runId,
-    "buildlapse.event-id": request.eventId,
-    "buildlapse.artifact-id": request.artifactId,
-    "buildlapse.revision": request.revisionHash.slice(0, 32),
+    "buildlabs.purpose": "proven-preview",
+    "buildlabs.run-id": request.runId,
+    "buildlabs.event-id": request.eventId,
+    "buildlabs.artifact-id": request.artifactId,
+    "buildlabs.revision": request.revisionHash.slice(0, 32),
   };
 }
 
 function frozenPreviewSandboxName(eventId: string): string {
-  return `buildlapse-preview-${eventId}`;
+  return `buildlabs-preview-${eventId}`;
 }
 
 function frozenPreviewEffectLabels(
   request: FrozenPreviewMaterializationRequest,
 ): Record<string, string> {
   return {
-    "buildlapse.effect-key": sha256(request.idempotencyKey).slice(0, 32),
-    "buildlapse.effect-input": sha256(
+    "buildlabs.effect-key": sha256(request.idempotencyKey).slice(0, 32),
+    "buildlabs.effect-input": sha256(
       JSON.stringify({
         artifactId: request.artifactId,
         artifactSha256: request.artifactSha256,
@@ -3487,11 +3487,11 @@ export class DaytonaSandboxSession implements SandboxSession {
     const command = [
       "git init -q",
       "git branch -M main",
-      "git config user.name 'Buildlapse Controller'",
-      "git config user.email 'controller@buildlapse.invalid'",
-      "mkdir -p .git/info .buildlapse",
+      "git config user.name 'BuildLabs Controller'",
+      "git config user.email 'controller@buildlabs.invalid'",
+      "mkdir -p .git/info .buildlabs",
       `printf '%s\\n' ${shellQuote(excludeFile)} > .git/info/exclude`,
-      "git commit --allow-empty -q -m 'Buildlapse baseline'",
+      "git commit --allow-empty -q -m 'BuildLabs baseline'",
     ].join(" && ");
     const result = await this.runCommand(command, 30, signal);
     if (result.exitCode !== 0) {
@@ -3560,7 +3560,7 @@ export class DaytonaSandboxSession implements SandboxSession {
         "Live preview is restricted to the Daytona builder sandbox",
       );
     }
-    const scriptPath = ".buildlapse/start-preview.sh";
+    const scriptPath = ".buildlabs/start-preview.sh";
     const script = [
       "#!/usr/bin/env bash",
       "set -euo pipefail",
@@ -3569,7 +3569,7 @@ export class DaytonaSandboxSession implements SandboxSession {
       "",
     ].join("\n");
     await this.sandbox.fs.uploadFile(Buffer.from(script, "utf8"), scriptPath);
-    const sessionId = "buildlapse-preview";
+    const sessionId = "buildlabs-preview";
     await deleteDaytonaSessionIfPresent(
       this.sandbox.process,
       sessionId,
@@ -3644,7 +3644,7 @@ export class DaytonaSandboxSession implements SandboxSession {
     }
     await deleteDaytonaSessionIfPresent(
       this.sandbox.process,
-      "buildlapse-preview",
+      "buildlabs-preview",
       signal,
     );
     const command = deliveryContainerRunCommand(imageTag, port);
@@ -3702,7 +3702,7 @@ export class DaytonaSandboxSession implements SandboxSession {
     const commit = await this.runCommand(
       [
         "git add -A",
-        "git commit --allow-empty -q -m 'Buildlapse frozen candidate'",
+        "git commit --allow-empty -q -m 'BuildLabs frozen candidate'",
         "git rev-parse HEAD",
       ].join(" && "),
       120,
@@ -3758,7 +3758,7 @@ export class DaytonaSandboxSession implements SandboxSession {
     signal?: AbortSignal,
   ): Promise<void> {
     throwIfAborted(signal);
-    const remoteArchive = `/tmp/buildlapse-source-${runId}-${purpose}-${revision.sourceDigest.slice(0, 16)}.tar`;
+    const remoteArchive = `/tmp/buildlabs-source-${runId}-${purpose}-${revision.sourceDigest.slice(0, 16)}.tar`;
     await withAbort(
       this.sandbox.fs.uploadFile(source.archivePath, remoteArchive, 300),
       signal,
@@ -3771,12 +3771,12 @@ export class DaytonaSandboxSession implements SandboxSession {
         `rm -f -- ${shellQuote(remoteArchive)}`,
         "git init -q",
         "git branch -M main",
-        "git config user.name 'Buildlapse Controller'",
-        "git config user.email 'controller@buildlapse.invalid'",
+        "git config user.name 'BuildLabs Controller'",
+        "git config user.email 'controller@buildlabs.invalid'",
         "git add -f -A",
-        "git commit --allow-empty -q -m 'Buildlapse verified source'",
+        "git commit --allow-empty -q -m 'BuildLabs verified source'",
         "git rev-parse HEAD",
-        "mkdir -p .git/info .buildlapse",
+        "mkdir -p .git/info .buildlabs",
         `printf '%s\\n' ${shellQuote(excludeFile)} > .git/info/exclude`,
       ].join(" && "),
       300,
@@ -3836,11 +3836,11 @@ export class DaytonaSandboxSession implements SandboxSession {
     }
 
     const localDirectory = await mkdtemp(
-      join(tmpdir(), "buildlapse-candidate-"),
+      join(tmpdir(), "buildlabs-candidate-"),
     );
     const localArchive = join(localDirectory, "workspace.tar");
     const extractionDirectory = join(localDirectory, "workspace");
-    const remoteExportDirectory = posix.join(this.workDir, ".buildlapse");
+    const remoteExportDirectory = posix.join(this.workDir, ".buildlabs");
     const remoteArchive = posix.join(
       remoteExportDirectory,
       `export-${revision.sourceDigest}.tar`,
@@ -3977,8 +3977,8 @@ export function deliveryContainerRunCommand(
   port: number,
 ): string {
   return [
-    "docker rm -f buildlapse-proof >/dev/null 2>&1 || true",
-    `docker run -d --name buildlapse-proof --pull never -p 127.0.0.1:${port}:${port} -e PORT=${port} ${shellQuote(imageTag)}`,
+    "docker rm -f buildlabs-proof >/dev/null 2>&1 || true",
+    `docker run -d --name buildlabs-proof --pull never -p 127.0.0.1:${port}:${port} -e PORT=${port} ${shellQuote(imageTag)}`,
   ].join(" && ");
 }
 
@@ -4024,7 +4024,7 @@ export async function inspectRenderedPagesInDaytonaSandbox(
   const commandTimeoutSeconds = Math.ceil(timeoutMilliseconds / 1_000) + 15;
   const command = [
     "set -euo pipefail",
-    'browser_tmp=$(mktemp -d "${TMPDIR:-/tmp}/buildlapse-browser.XXXXXX")',
+    'browser_tmp=$(mktemp -d "${TMPDIR:-/tmp}/buildlabs-browser.XXXXXX")',
     "cleanup() {",
     '  pkill -KILL -f -- "$browser_tmp" >/dev/null 2>&1 || true',
     '  rm -rf -- "$browser_tmp"',
@@ -4294,7 +4294,7 @@ export async function executeBoundedSandboxCommand(
   const wrapper = [
     "set +e",
     "umask 077",
-    'capture_dir=$(mktemp -d "${TMPDIR:-/tmp}/buildlapse-command.XXXXXX") || exit 125',
+    'capture_dir=$(mktemp -d "${TMPDIR:-/tmp}/buildlabs-command.XXXXXX") || exit 125',
     'cleanup() { rm -rf -- "$capture_dir"; }',
     "trap cleanup EXIT",
     'stdout_file="$capture_dir/stdout"',
@@ -4592,7 +4592,7 @@ async function validateControllerExport(
   }
   await validateSourceArchive(source.archivePath);
   const validationDirectory = await mkdtemp(
-    join(tmpdir(), "buildlapse-controller-source-"),
+    join(tmpdir(), "buildlabs-controller-source-"),
   );
   try {
     await tar.x({
@@ -4663,7 +4663,7 @@ export async function sourceTreeDigest(root: string): Promise<string> {
   );
 
   const hash = createHash("sha256");
-  hash.update("buildlapse-source-tree-v1\0");
+  hash.update("buildlabs-source-tree-v1\0");
   for (const path of files) {
     const absolutePath = join(root, ...path.split("/"));
     const metadata = await lstat(absolutePath);
@@ -4739,7 +4739,7 @@ export async function ensureDockerRuntime(
 
   let daemon = await findDockerEntrypointCommand(sandbox, signal);
   if (!daemon) {
-    const sessionId = "buildlapse-dockerd";
+    const sessionId = "buildlabs-dockerd";
     try {
       await deleteDaytonaSessionIfPresent(sandbox.process, sessionId, signal);
       await withAbort(sandbox.process.createSession(sessionId), signal);

@@ -97,7 +97,7 @@ describe("OrchestrationAgent proposal/payment/build lifecycle", () => {
     deployment = new FakeDeployment();
     reasoner = new FakeReasoner();
     dashboardAccess = new CustomerDashboardAccessCodec({
-      publicBaseUrl: "https://orchestrator.buildlapse.example",
+      publicBaseUrl: "https://orchestrator.buildlabs.example",
       secret: Buffer.alloc(32, 12),
       now: () => now,
     });
@@ -110,16 +110,16 @@ describe("OrchestrationAgent proposal/payment/build lifecycle", () => {
       build,
       deployment,
       replyAddresses: new ReplyAddressCodec({
-        domain: "reply.buildlapse.example",
+        domain: "reply.buildlabs.example",
         secret: Buffer.alloc(32, 4),
       }),
       proofSummaryLinks: new ProofSummaryLinkCodec({
-        publicBaseUrl: "https://orchestrator.buildlapse.example",
+        publicBaseUrl: "https://orchestrator.buildlabs.example",
         secret: Buffer.alloc(32, 4),
       }),
       customerDashboardAccess: dashboardAccess,
-      fromEmail: "Buildlapse <projects@buildlapse.example>",
-      messageIdDomain: "reply.buildlapse.example",
+      fromEmail: "BuildLabs <projects@buildlabs.example>",
+      messageIdDomain: "reply.buildlabs.example",
       expectedStripeLivemode: false,
       now: () => now,
       previewReviewPeriodMs: 0,
@@ -155,7 +155,7 @@ describe("OrchestrationAgent proposal/payment/build lifecycle", () => {
 
     const inboundMessageId = "<revision-001@customer.example>";
     const priorReferences =
-      "<proposal-001@buildlapse.example> <followup-001@buildlapse.example>";
+      "<proposal-001@buildlabs.example> <followup-001@buildlabs.example>";
     const revised = await agent.receiveCustomerMessage({
       projectId: initial.projectId,
       providerEventId: "resend-event-revision-001",
@@ -181,8 +181,8 @@ describe("OrchestrationAgent proposal/payment/build lifecycle", () => {
       References: `${priorReferences} ${inboundMessageId}`,
     });
     const encodedReferences = [
-      "<proposal-001@buildlapse.example>",
-      "<followup-001@buildlapse.example>",
+      "<proposal-001@buildlabs.example>",
+      "<followup-001@buildlabs.example>",
       inboundMessageId,
     ].map(
       (messageId) =>
@@ -314,7 +314,7 @@ describe("OrchestrationAgent proposal/payment/build lifecycle", () => {
       agent.verifyEmailOwnership({
         projectId: captured.projectId,
         method: "passwordless_email",
-        provider: "buildlapse_auth",
+        provider: "buildlabs_auth",
         providerEventId: "magic-link-session-mismatch-001",
         eventDigest: sha256("mismatched-passwordless-event"),
         email: "someone-else@example.com",
@@ -330,7 +330,7 @@ describe("OrchestrationAgent proposal/payment/build lifecycle", () => {
     const verification = {
       projectId: captured.projectId,
       method: "passwordless_email" as const,
-      provider: "buildlapse_auth",
+      provider: "buildlabs_auth",
       providerEventId: "magic-link-session-001",
       eventDigest: sha256("passwordless-event-001"),
       email: "JORDAN@example.com",
@@ -354,7 +354,7 @@ describe("OrchestrationAgent proposal/payment/build lifecycle", () => {
     expect(verificationEvent).toMatchObject({
       actor: "provider",
       payload: {
-        provider: "buildlapse_auth",
+        provider: "buildlabs_auth",
         providerEventDigest: verification.eventDigest,
         correlationId: verification.providerEventId,
       },
@@ -389,7 +389,7 @@ describe("OrchestrationAgent proposal/payment/build lifecycle", () => {
     const verification = {
       projectId: captured.projectId,
       method: "passwordless_email" as const,
-      provider: "buildlapse_dashboard",
+      provider: "buildlabs_dashboard",
       providerEventId: "dashboard-exchange-event-001",
       eventDigest: sha256("dashboard-exchange-event-001"),
       email: "jordan@example.com",
@@ -1382,7 +1382,7 @@ describe("OrchestrationAgent proposal/payment/build lifecycle", () => {
     const checkout = initial.checkoutSessions[0]!;
     const proposalMessageId = mail.requests[0]?.headers?.["Message-ID"];
     expect(proposalMessageId).toMatch(
-      /^<[a-f0-9]{64}@reply\.buildlapse\.example>$/,
+      /^<[a-f0-9]{64}@reply\.buildlabs\.example>$/,
     );
     expect(
       initial.messages.find((message) => message.purpose === "proposal")
@@ -1453,11 +1453,11 @@ describe("OrchestrationAgent proposal/payment/build lifecycle", () => {
       request.subject.includes("Production delivery"),
     )!;
     const proofUrl = finalRequest.text.match(
-      /https:\/\/orchestrator\.buildlapse\.example\/v1\/orchestration\/proof-summaries\/[A-Za-z0-9_.-]+/,
+      /https:\/\/orchestrator\.buildlabs\.example\/v1\/orchestration\/proof-summaries\/[A-Za-z0-9_.-]+/,
     )?.[0];
     expect(proofUrl).toBeDefined();
     const proofGrant = new ProofSummaryLinkCodec({
-      publicBaseUrl: "https://orchestrator.buildlapse.example",
+      publicBaseUrl: "https://orchestrator.buildlabs.example",
       secret: Buffer.alloc(32, 4),
     }).parse(new URL(proofUrl!).pathname.split("/").at(-1)!);
     expect(proofGrant.snapshotId).toMatch(/^proof-summary:[a-f0-9]{32}$/u);
@@ -1627,7 +1627,7 @@ describe("OrchestrationAgent proposal/payment/build lifecycle", () => {
   it("reuses the exact stored proof snapshot after a crash between insert and effect completion", async () => {
     store.close();
     const databaseDirectory = mkdtempSync(
-      join(tmpdir(), "buildlapse-proof-recovery-"),
+      join(tmpdir(), "buildlabs-proof-recovery-"),
     );
     temporaryDirectories.push(databaseDirectory);
     const databasePath = join(databaseDirectory, "orchestration.sqlite");
@@ -1699,10 +1699,10 @@ describe("OrchestrationAgent proposal/payment/build lifecycle", () => {
     );
     expect(finalRequests).toHaveLength(1);
     const proofUrl = finalRequests[0]!.text.match(
-      /https:\/\/orchestrator\.buildlapse\.example\/v1\/orchestration\/proof-summaries\/[A-Za-z0-9_.-]+/,
+      /https:\/\/orchestrator\.buildlabs\.example\/v1\/orchestration\/proof-summaries\/[A-Za-z0-9_.-]+/,
     )?.[0];
     const recoveredGrant = new ProofSummaryLinkCodec({
-      publicBaseUrl: "https://orchestrator.buildlapse.example",
+      publicBaseUrl: "https://orchestrator.buildlabs.example",
       secret: Buffer.alloc(32, 4),
     }).parse(new URL(proofUrl!).pathname.split("/").at(-1)!);
     expect(recoveredGrant).toEqual({
@@ -3647,7 +3647,7 @@ class FakeReasoner implements OrchestrationReasoner {
         requirements,
         verification: {
           origin: "system_policy",
-          policyId: "buildlapse-proof-gate-v1",
+          policyId: "buildlabs-proof-gate-v1",
           buildCommand: "npm run build",
           testCommands: ["npm test"],
           previewCommand: "npm run start",
@@ -4148,7 +4148,7 @@ class FakeValidatedArtifact extends ValidatedProvenArtifact {
   readonly sourceSha256: string;
   readonly sourceSizeBytes: number;
   readonly workspaceSha256 = "e".repeat(64);
-  readonly directory = "/tmp/buildlapse-fake-proven";
+  readonly directory = "/tmp/buildlabs-fake-proven";
   #cleaned = false;
 
   constructor(event: OutboxEvent) {
@@ -4198,7 +4198,7 @@ class FakeDeployment implements FlyDeploymentPort {
     }
     return Promise.resolve({
       provider: "fly",
-      appName: "buildlapse-project",
+      appName: "buildlabs-project",
       releaseKey: sha256(request.event.eventId),
       projectId: request.event.payload.projectId,
       candidateId: request.event.payload.candidateId,
@@ -4217,7 +4217,7 @@ class FakeDeployment implements FlyDeploymentPort {
       },
       deploymentAttempted: true,
       recoveredFromProvider: false,
-      productionUrl: "https://buildlapse-project.fly.dev/",
+      productionUrl: "https://buildlabs-project.fly.dev/",
       deployedAt: NOW,
       releaseVerifiedAt: NOW,
       healthVerifiedAt: NOW,

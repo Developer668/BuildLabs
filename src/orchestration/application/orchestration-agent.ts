@@ -643,7 +643,7 @@ export class OrchestrationAgent {
         direction: "inbound",
         channel: source,
         purpose: "customer_revision",
-        provider: source === "dashboard" ? "buildlapse_dashboard" : "resend",
+        provider: source === "dashboard" ? "buildlabs_dashboard" : "resend",
         providerMessageId: input.providerMessageId,
         ...(input.threadId ? { threadId: input.threadId } : {}),
         references: [],
@@ -688,7 +688,7 @@ export class OrchestrationAgent {
         existingMessage.contentDigest !== sha256(input.content) ||
         existingMessage.channel !== source ||
         existingMessage.provider !==
-          (source === "dashboard" ? "buildlapse_dashboard" : "resend")
+          (source === "dashboard" ? "buildlabs_dashboard" : "resend")
       ) {
         throw new OrchestrationPolicyError(
           "Provider message identity was reused with different content",

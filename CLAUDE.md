@@ -5,8 +5,8 @@ code in this repository.
 
 ## What this repo is
 
-The **build-agent backend** of Buildlapse (package
-`@buildlapse/build-agent-backend`) — one subsystem, not the whole product. It
+The **build-agent backend** of BuildLabs (package
+`@buildlabs/build-agent-backend`) — one subsystem, not the whole product. It
 receives a `BuildAssignment` (build prompt + Acceptance Contract) over an
 internal HTTP API, runs the **build → verify → prove → snapshot** loop for a
 single candidate inside a Daytona sandbox, and reports terminal results through
@@ -124,7 +124,7 @@ pass it snapshots the sandbox, persists the artifact, and marks the run
 - **Cancellation/timeouts** flow through `AbortSignal` (wall-clock via
   `AbortSignal.timeout`, combined with `AbortSignal.any`); `ensureActive()`
   re-checks between steps.
-- **Auth:** `BUILDLAPSE_INTERNAL_TOKEN` bearer (constant-time compare), required
+- **Auth:** `BUILDLABS_INTERNAL_TOKEN` bearer (constant-time compare), required
   in production or on a non-loopback host; `/health` and `/ready` are exempt.
 
 ## Guardrails (from AGENTS.md — the prime directive)

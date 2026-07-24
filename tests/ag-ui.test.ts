@@ -15,13 +15,13 @@ import {
   AgUiInputError,
   buildRunActivityMessageId,
   createBuildRunAgUiHandler,
-  parseBuildlapseAgUiRunInput,
+  parseBuildLabsAgUiRunInput,
   streamBuildRunAsAgUi,
 } from "../src/http/ag-ui.js";
 import type { RunStore } from "../src/ports/index.js";
 import { assignment } from "./fixtures.js";
 
-describe("Buildlapse AG-UI transport", () => {
+describe("BuildLabs AG-UI transport", () => {
   let store: SqliteRunStore;
 
   beforeEach(() => {
@@ -34,14 +34,14 @@ describe("Buildlapse AG-UI transport", () => {
 
   it("parses bounded official RunAgentInput without accepting client tools", () => {
     const buildRunId = randomUUID();
-    const parsed = parseBuildlapseAgUiRunInput(runInput(buildRunId));
+    const parsed = parseBuildLabsAgUiRunInput(runInput(buildRunId));
     expect(parsed.forwardedProps).toEqual({
       buildRunId,
       afterSequence: 0,
     });
 
     expect(() =>
-      parseBuildlapseAgUiRunInput({
+      parseBuildLabsAgUiRunInput({
         ...runInput(buildRunId),
         tools: [
           {
@@ -54,28 +54,28 @@ describe("Buildlapse AG-UI transport", () => {
     ).toThrow(/Client-provided tools/);
 
     expect(() =>
-      parseBuildlapseAgUiRunInput({
+      parseBuildLabsAgUiRunInput({
         ...runInput(buildRunId),
         forwardedProps: { buildRunId: "not-a-uuid" },
       }),
     ).toThrow(/valid UUID/);
 
     expect(() =>
-      parseBuildlapseAgUiRunInput({
+      parseBuildLabsAgUiRunInput({
         ...runInput(buildRunId),
         runId: buildRunId,
       }),
     ).toThrow(/must be distinct/);
 
     expect(() =>
-      parseBuildlapseAgUiRunInput({
+      parseBuildLabsAgUiRunInput({
         ...runInput(buildRunId),
         state: { padding: "x".repeat(AG_UI_MAX_INPUT_BYTES) },
       }),
     ).toThrow(AgUiInputError);
 
     expect(() =>
-      parseBuildlapseAgUiRunInput({
+      parseBuildLabsAgUiRunInput({
         ...runInput(buildRunId),
         resume: [{ interruptId: "unsupported", payload: {} }],
       }),
@@ -87,7 +87,7 @@ describe("Buildlapse AG-UI transport", () => {
     store.requestCancel(run.id);
     const history = store.listEvents(run.id, 0);
     const afterSequence = history[0]!.sequence;
-    const input = parseBuildlapseAgUiRunInput({
+    const input = parseBuildLabsAgUiRunInput({
       ...runInput(run.id),
       forwardedProps: { buildRunId: run.id, afterSequence },
     });
@@ -116,7 +116,7 @@ describe("Buildlapse AG-UI transport", () => {
     const lease = store.acquireSlot(run.id, 30_000)!;
     store.startRun(run.id, lease);
     store.markFailed(run.id, lease, "sandbox_failed", "Sandbox failed");
-    const input = parseBuildlapseAgUiRunInput(runInput(run.id));
+    const input = parseBuildLabsAgUiRunInput(runInput(run.id));
 
     const events = await collectEvents(
       streamBuildRunAsAgUi(input, store, {
@@ -160,7 +160,7 @@ describe("Buildlapse AG-UI transport", () => {
 
   it("performs a final durable read before finishing a concurrently terminal run", async () => {
     const buildRunId = randomUUID();
-    const input = parseBuildlapseAgUiRunInput(runInput(buildRunId));
+    const input = parseBuildLabsAgUiRunInput(runInput(buildRunId));
     const durableEvents = [
       {
         sequence: 1,
@@ -227,7 +227,7 @@ describe("Buildlapse AG-UI transport", () => {
 
   it("keeps a stable activity identity while following a live run", async () => {
     const run = store.createRun(assignment("ag-ui-live")).run;
-    const input = parseBuildlapseAgUiRunInput(runInput(run.id));
+    const input = parseBuildLabsAgUiRunInput(runInput(run.id));
     let polls = 0;
 
     const events = await collectEvents(
@@ -264,7 +264,7 @@ describe("Buildlapse AG-UI transport", () => {
 
     await collectEvents(
       streamBuildRunAsAgUi(
-        parseBuildlapseAgUiRunInput(runInput(run.id)),
+        parseBuildLabsAgUiRunInput(runInput(run.id)),
         store,
         {
           waitForPoll: () => {
@@ -297,7 +297,7 @@ describe("Buildlapse AG-UI transport", () => {
 
     const events = await collectEvents(
       streamBuildRunAsAgUi(
-        parseBuildlapseAgUiRunInput(runInput(run.id)),
+        parseBuildLabsAgUiRunInput(runInput(run.id)),
         store,
       ),
     );
@@ -331,7 +331,7 @@ describe("Buildlapse AG-UI transport", () => {
 
   it("emits a protocol-valid keepalive only after a long idle interval", async () => {
     const run = store.createRun(assignment("ag-ui-keepalive")).run;
-    const input = parseBuildlapseAgUiRunInput(runInput(run.id));
+    const input = parseBuildLabsAgUiRunInput(runInput(run.id));
     let now = 0;
 
     const events = await collectEvents(
@@ -369,7 +369,7 @@ describe("Buildlapse AG-UI transport", () => {
 
   it("uses RUN_ERROR only when the observer transport itself fails", async () => {
     const buildRunId = randomUUID();
-    const input = parseBuildlapseAgUiRunInput(runInput(buildRunId));
+    const input = parseBuildLabsAgUiRunInput(runInput(buildRunId));
     const brokenStore = {
       getRun: () => ({
         id: buildRunId,
@@ -400,7 +400,7 @@ describe("Buildlapse AG-UI transport", () => {
       },
       {
         type: EventType.RUN_ERROR,
-        code: "buildlapse_ag_ui_internal_error",
+        code: "buildlabs_ag_ui_internal_error",
         message: "The build-run event stream failed",
       },
     ]);
@@ -409,7 +409,7 @@ describe("Buildlapse AG-UI transport", () => {
   it("streams negotiated SSE and protobuf from a Fastify handler", async () => {
     const run = store.createRun(assignment("ag-ui-handler")).run;
     store.requestCancel(run.id);
-    const input = parseBuildlapseAgUiRunInput(runInput(run.id));
+    const input = parseBuildLabsAgUiRunInput(runInput(run.id));
     const expectedEvents = await collectEvents(
       streamBuildRunAsAgUi(input, store),
     );

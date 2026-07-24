@@ -82,7 +82,7 @@ describe("customer dashboard projection", () => {
         {
           batchId: "batch-v1",
           proposalVersion: 1,
-          url: "https://preview.buildlapse.example/v1",
+          url: "https://preview.buildlabs.example/v1",
           immutable: true,
           httpsHealthy: true,
           expiresAt: "2026-07-25T12:00:00.000Z",
@@ -126,7 +126,7 @@ describe("customer dashboard projection", () => {
     });
     expect(view.deliverables).toEqual({
       frozenProvenPreview: {
-        url: "https://preview.buildlapse.example/v1",
+        url: "https://preview.buildlabs.example/v1",
         expiresAt: "2026-07-25T12:00:00.000Z",
         verifiedAt: "2026-07-24T10:20:00.000Z",
       },

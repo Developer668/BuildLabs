@@ -110,7 +110,7 @@ describe("source inspection coverage", () => {
 
   async function workspace(): Promise<string> {
     const directory = await mkdtemp(
-      join(tmpdir(), "buildlapse-inspection-test-"),
+      join(tmpdir(), "buildlabs-inspection-test-"),
     );
     temporaryDirectories.push(directory);
     await mkdir(directory, { recursive: true });

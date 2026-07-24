@@ -13,7 +13,7 @@ const grant = {
 describe("proof-summary link capabilities", () => {
   it("creates one stable, exact-deployment capability and verifies it", () => {
     const codec = new ProofSummaryLinkCodec({
-      publicBaseUrl: "https://orchestrator.buildlapse.example/api/",
+      publicBaseUrl: "https://orchestrator.buildlabs.example/api/",
       secret: Buffer.alloc(32, 11),
     });
 
@@ -22,7 +22,7 @@ describe("proof-summary link capabilities", () => {
 
     expect(first).toBe(second);
     expect(first).toMatch(
-      /^https:\/\/orchestrator\.buildlapse\.example\/api\/v1\/orchestration\/proof-summaries\//,
+      /^https:\/\/orchestrator\.buildlabs\.example\/api\/v1\/orchestration\/proof-summaries\//,
     );
     expect(codec.parse(new URL(first).pathname.split("/").at(-1)!)).toEqual(
       grant,
@@ -33,7 +33,7 @@ describe("proof-summary link capabilities", () => {
 
   it("rejects a modified capability without revealing which binding failed", () => {
     const codec = new ProofSummaryLinkCodec({
-      publicBaseUrl: "https://orchestrator.buildlapse.example",
+      publicBaseUrl: "https://orchestrator.buildlabs.example",
       secret: Buffer.alloc(32, 11),
     });
     const token = new URL(codec.create(grant)).pathname.split("/").at(-1)!;

@@ -1,4 +1,4 @@
-# Buildlapse Customer Dashboard
+# BuildLabs Customer Dashboard
 
 > Product and implementation specification for the authenticated customer
 > workspace.
@@ -35,7 +35,7 @@
 
 ## 1. Product definition
 
-The customer dashboard is Buildlapse's private project workspace. A pre-proposal
+The customer dashboard is BuildLabs's private project workspace. A pre-proposal
 one-time link first verifies email possession and opens the workspace; after
 verified payment and successful build dispatch, Resend sends or reissues the
 project link in-thread and the build cockpit becomes active. The dashboard gives
@@ -62,7 +62,7 @@ as a preview.
 
 ### 1.1 The key product distinction
 
-Buildlapse has four different visual surfaces:
+BuildLabs has four different visual surfaces:
 
 | Surface                     | Audience                                   | Mutability                              | What it may show                                                                             |
 | --------------------------- | ------------------------------------------ | --------------------------------------- | -------------------------------------------------------------------------------------------- |
@@ -80,7 +80,7 @@ controller output, not a transparent proxy or alternate address for that URL.
 
 ### 2.1 Goals
 
-1. Let a customer understand what Buildlapse is doing without reading logs or
+1. Let a customer understand what BuildLabs is doing without reading logs or
    knowing development terminology.
 2. Represent all allocated builders independently, including disagreement,
    repair, rejection, failure, and idle states.
@@ -163,17 +163,17 @@ spec. Voice-captured fields are transcribed once without a spoken read-back or
 personal-detail confirmation turn. Transcription confidence is not identity
 proof.
 
-Voice-captured email begins as unverified. Before Buildlapse sends a proposal,
+Voice-captured email begins as unverified. Before BuildLabs sends a proposal,
 Resend sends a one-time passwordless link to that address. Consuming the link
 proves email possession, rotates into a project-scoped session, and permits the
-proposal flow to continue. This does not permit Buildlapse to guess a missing or
+proposal flow to continue. This does not permit BuildLabs to guess a missing or
 contradictory email; a bad transcription simply prevents the intended customer
 from receiving the link and requires a focused correction. Phone is never used
 as dashboard authentication in version 1.
 
 ### 4.2 Verification and build-start links
 
-Buildlapse uses the same passwordless mechanism at two distinct moments:
+BuildLabs uses the same passwordless mechanism at two distinct moments:
 
 1. **Pre-proposal ownership verification.** After voice intake, the orchestrator
    records one idempotent verification-link effect. Resend sends a
@@ -233,7 +233,7 @@ The customer cannot see:
 A customer can submit a change from the dashboard or reply to the correlated
 email thread. Both paths enter the same orchestration inbox.
 
-Submitting from the dashboard means only "Buildlapse received this request." The
+Submitting from the dashboard means only "BuildLabs received this request." The
 UI must not immediately say the change was accepted, implemented, or in scope.
 The orchestrator then classifies it:
 
@@ -273,7 +273,7 @@ The shell is a quiet operational workspace, not a marketing page.
 
 **Desktop, 1024 px and wider**
 
-- Top bar: Buildlapse wordmark, project switcher when more than one project is
+- Top bar: BuildLabs wordmark, project switcher when more than one project is
   authorized, masked account email, and session menu.
 - Project bar: project title, requested contract version, lifecycle status,
   stream freshness, and the current proven/production version when different.
@@ -437,13 +437,13 @@ Updates is one ordered conversation and decision timeline for:
 
 - dashboard steering submissions;
 - authenticated inbound email steering;
-- Buildlapse clarification questions;
+- BuildLabs clarification questions;
 - proposal and contract versions;
 - payment confirmation;
 - preview availability;
 - deployment and delivery.
 
-Each entry identifies its channel as `Dashboard`, `Email`, or `Buildlapse`.
+Each entry identifies its channel as `Dashboard`, `Email`, or `BuildLabs`.
 Email bodies are not mirrored automatically. The projection stores and renders a
 customer-safe summary with a link to the resulting version or action. This
 avoids duplicating private thread content into broadly consumed event records.
@@ -488,7 +488,7 @@ customer-facing label. The frontend must not reinterpret it.
 | `completed`                      | Delivered                        | Show verified production and proof summary       |
 | `cancelled`                      | Project cancelled                | Read-only history                                |
 | `failed`                         | Project stopped                  | Read-only evidence and contact path              |
-| `needs_operator_attention`       | Buildlapse is resolving an issue | No invented ETA or progress                      |
+| `needs_operator_attention`       | BuildLabs is resolving an issue | No invented ETA or progress                      |
 
 ### 6.2 Builder state
 
@@ -636,14 +636,14 @@ claim.
 
 ### 7.2 Session policy
 
-- Session cookie: `buildlapse_dashboard_session`, `Secure`, `HttpOnly`,
+- Session cookie: `buildlabs_dashboard_session`, `Secure`, `HttpOnly`,
   `SameSite=Strict`, `Path=/v1/orchestration/customer-dashboard`, with no
   `Domain`.
-- CSRF cookie: `buildlapse_dashboard_csrf`, `Secure`, `SameSite=Strict`,
+- CSRF cookie: `buildlabs_dashboard_csrf`, `Secure`, `SameSite=Strict`,
   `Path=/`, readable by the future frontend.
 - Absolute session lifetime: seven days by default. The session is a stateless
   signed capability with a fresh nonce, not a database session.
-- CSRF: dashboard mutations require the CSRF cookie and `x-buildlapse-csrf`
+- CSRF: dashboard mutations require the CSRF cookie and `x-buildlabs-csrf`
   header to match in constant time and to match the token derived from the
   signed session.
 - Project access: every read and mutation verifies the session signature,
@@ -715,8 +715,8 @@ Content-Type: application/json
 {"token":"<fragment token>"}
 ```
 
-On success the response sets `buildlapse_dashboard_session` and
-`buildlapse_dashboard_csrf` cookies and returns:
+On success the response sets `buildlabs_dashboard_session` and
+`buildlabs_dashboard_csrf` cookies and returns:
 
 ```json
 {
@@ -803,7 +803,7 @@ Steering:
 ```http
 POST /v1/orchestration/customer-dashboard/projects/:projectId/steering
 Content-Type: application/json
-x-buildlapse-csrf: <value from buildlapse_dashboard_csrf cookie>
+x-buildlabs-csrf: <value from buildlabs_dashboard_csrf cookie>
 Idempotency-Key: <stable command key>
 
 {
@@ -1430,7 +1430,7 @@ treated as untrusted relative to the dashboard.
 - Bind preview authorization to the exact immutable receipt. Do not proxy a
   mutable builder endpoint behind a customer-looking URL.
 - Display expiry and revocation outside the preview frame so generated content
-  cannot counterfeit Buildlapse status.
+  cannot counterfeit BuildLabs status.
 
 The production URL opens in a new tab and is never embedded with authenticated
 dashboard state.

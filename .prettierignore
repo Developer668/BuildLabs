@@ -2,7 +2,7 @@ coverage
 dist
 node_modules
 package-lock.json
-.buildlapse
+.buildlabs
 AGENTS.md
 PRODUCT_SPEC.md
 README.md

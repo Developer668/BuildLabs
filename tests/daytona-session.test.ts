@@ -71,9 +71,9 @@ describe("Daytona process session cleanup", () => {
       .mockRejectedValue(new DaytonaNotFoundError("not found", 404));
 
     await expect(
-      deleteDaytonaSessionIfPresent({ deleteSession }, "buildlapse-preview"),
+      deleteDaytonaSessionIfPresent({ deleteSession }, "buildlabs-preview"),
     ).resolves.toBeUndefined();
-    expect(deleteSession).toHaveBeenCalledWith("buildlapse-preview");
+    expect(deleteSession).toHaveBeenCalledWith("buildlabs-preview");
   });
 
   it.each([
@@ -86,7 +86,7 @@ describe("Daytona process session cleanup", () => {
     await expect(
       deleteDaytonaSessionIfPresent(
         { deleteSession: vi.fn().mockRejectedValue(failure) },
-        "buildlapse-preview",
+        "buildlabs-preview",
       ),
     ).rejects.toBe(failure);
   });
@@ -100,7 +100,7 @@ describe("Daytona process session cleanup", () => {
     await expect(
       deleteDaytonaSessionIfPresent(
         { deleteSession },
-        "buildlapse-preview",
+        "buildlabs-preview",
         controller.signal,
       ),
     ).rejects.toBe(cancellation);
@@ -119,7 +119,7 @@ describe("Daytona process session cleanup", () => {
     );
     const cleanup = deleteDaytonaSessionIfPresent(
       { deleteSession },
-      "buildlapse-preview",
+      "buildlabs-preview",
       controller.signal,
     );
     const settled = vi.fn();
@@ -150,7 +150,7 @@ describe("Daytona provider lifecycle", () => {
     } as unknown as Daytona;
     const provider = new DaytonaSandboxProvider(
       {
-        DAYTONA_BUILD_SNAPSHOT: "buildlapse-test",
+        DAYTONA_BUILD_SNAPSHOT: "buildlabs-test",
       } as AppConfig,
       client,
     );
@@ -196,8 +196,8 @@ describe("Daytona Docker runtime readiness", () => {
       inspectTimeoutSeconds: 1,
     });
 
-    expect(deleteSession).toHaveBeenCalledWith("buildlapse-dockerd");
-    expect(createSession).toHaveBeenCalledWith("buildlapse-dockerd");
+    expect(deleteSession).toHaveBeenCalledWith("buildlabs-dockerd");
+    expect(createSession).toHaveBeenCalledWith("buildlabs-dockerd");
     expect(executeSessionCommand).toHaveBeenCalledOnce();
     expect(executeCommand).toHaveBeenCalledTimes(3);
   });
@@ -399,12 +399,12 @@ describe("Daytona verifier source export", () => {
     downloadFailure?: Error;
   }) {
     const sandboxRoot = await mkdtemp(
-      join(tmpdir(), "buildlapse-daytona-export-"),
+      join(tmpdir(), "buildlabs-daytona-export-"),
     );
     const workDir = join(
       sandboxRoot,
       "home",
-      ".buildlapse-verifier-delivery-nested",
+      ".buildlabs-verifier-delivery-nested",
     );
     await mkdir(workDir, { recursive: true });
 
@@ -470,8 +470,8 @@ describe("Daytona verifier source export", () => {
     await writeFile(join(workDir, "app.txt"), "nested verifier source\n");
     const revision = await session.freeze();
     const remotePaths = [
-      join(workDir, ".buildlapse", `export-${revision.sourceDigest}.files`),
-      join(workDir, ".buildlapse", `export-${revision.sourceDigest}.tar`),
+      join(workDir, ".buildlabs", `export-${revision.sourceDigest}.files`),
+      join(workDir, ".buildlabs", `export-${revision.sourceDigest}.tar`),
     ];
     return {
       downloadFile,
@@ -592,7 +592,7 @@ describe("Daytona delivery proof network seal", () => {
       networkBlockAll: true,
     });
     await expect(
-      session.startContainerPreview("buildlapse-candidate", 3_000),
+      session.startContainerPreview("buildlabs-candidate", 3_000),
     ).rejects.toThrow("network-sealed Daytona delivery verifier");
   });
 
@@ -631,7 +631,7 @@ describe("Daytona delivery proof network seal", () => {
     );
 
     await session.sealNetworkForProof();
-    await session.createSnapshot("buildlapse-promoted-snapshot");
+    await session.createSnapshot("buildlabs-promoted-snapshot");
 
     expect(updateNetworkSettings).toHaveBeenCalledTimes(2);
     expect(updateNetworkSettings).toHaveBeenNthCalledWith(1, {
@@ -653,7 +653,7 @@ describe("Daytona delivery proof network seal", () => {
 
 describe("Daytona rendered-page proof boundary", () => {
   it("publishes the proven container only on sealed sandbox loopback", () => {
-    const command = deliveryContainerRunCommand("buildlapse-candidate", 3_000);
+    const command = deliveryContainerRunCommand("buildlabs-candidate", 3_000);
 
     expect(command).toContain("-p 127.0.0.1:3000:3000");
     expect(command).not.toContain("--network host");

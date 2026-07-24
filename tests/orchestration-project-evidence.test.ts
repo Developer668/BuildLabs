@@ -26,7 +26,7 @@ describe("recorded project proof evidence", () => {
     });
 
     expect(summary).toMatchObject({
-      schemaVersion: "buildlapse-proof-summary-v1",
+      schemaVersion: "buildlabs-proof-summary-v1",
       project: {
         projectId,
         title: "Customer booking application",
@@ -34,7 +34,7 @@ describe("recorded project proof evidence", () => {
       contract: {
         version: 2,
         digest: contractDigest,
-        verificationPolicy: "buildlapse-proof-gate-v1",
+        verificationPolicy: "buildlabs-proof-gate-v1",
         configuredChecks: {
           buildCommand: "npm run build",
           testCommands: ["npm test"],
@@ -479,7 +479,7 @@ function evidenceSource(): RecordedProofEvidenceSource {
             },
           ],
           verification: {
-            policyId: "buildlapse-proof-gate-v1",
+            policyId: "buildlabs-proof-gate-v1",
             buildCommand: "npm run build",
             testCommands: ["npm test"],
             previewCommand: "npm run preview",

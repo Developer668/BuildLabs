@@ -61,7 +61,7 @@ export class StripePaymentAdapter implements PaymentPort {
     this.#successUrl = assertRedirectUrl(options.successUrl);
     this.#cancelUrl = assertRedirectUrl(options.cancelUrl);
     this.#productName =
-      options.productName?.trim() || "Buildlapse software engagement";
+      options.productName?.trim() || "BuildLabs software engagement";
     this.#expectedLivemode =
       options.expectedLivemode ?? inferLivemode(options.secretKey);
     this.#webhookEndpointUrl = options.webhookEndpointUrl

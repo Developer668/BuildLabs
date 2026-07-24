@@ -63,7 +63,7 @@ describe("FireworksModel", () => {
       };
       response.writeHead(200, { "Content-Type": "application/json" }).end(
         JSON.stringify({
-          id: "chatcmpl-buildlapse",
+          id: "chatcmpl-buildlabs",
           object: "chat.completion",
           created: 1,
           model: "accounts/fireworks/models/kimi-k2p6",
@@ -394,7 +394,7 @@ describe("FireworksModel", () => {
                       id: "call-readiness",
                       type: "function",
                       function: {
-                        name: "buildlapse_readiness",
+                        name: "buildlabs_readiness",
                         arguments: "{}",
                       },
                     },
@@ -440,13 +440,13 @@ describe("FireworksModel", () => {
         reasoning_effort: "none",
         tool_choice: {
           type: "function",
-          function: { name: "buildlapse_readiness" },
+          function: { name: "buildlabs_readiness" },
         },
         tools: [
           {
             type: "function",
             function: {
-              name: "buildlapse_readiness",
+              name: "buildlabs_readiness",
               parameters: {
                 type: "object",
                 additionalProperties: false,
@@ -463,7 +463,7 @@ describe("FireworksModel", () => {
       reasoning_effort: "none",
       tool_choice: {
         type: "function",
-        function: { name: "buildlapse_readiness" },
+        function: { name: "buildlabs_readiness" },
       },
     });
     const visionMessagesValue: unknown = capabilityBodies[2]?.messages;

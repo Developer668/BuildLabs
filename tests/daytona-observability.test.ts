@@ -4,17 +4,17 @@ import { daytonaTelemetryLabels } from "../src/adapters/daytona/daytona-sandbox.
 import { loadConfig } from "../src/config.js";
 
 describe("Daytona sandbox observability", () => {
-  it("correlates Daytona telemetry with the Buildlapse run", () => {
+  it("correlates Daytona telemetry with the BuildLabs run", () => {
     expect(
       daytonaTelemetryLabels("run-123", {
         projectId: "project:alpha",
         candidateId: "candidate_4",
       }),
     ).toBe(
-      "buildlapse_run_id=run-123," +
-        "buildlapse_project_id=project:alpha," +
-        "buildlapse_candidate_id=candidate_4," +
-        "buildlapse_sandbox_role=builder",
+      "buildlabs_run_id=run-123," +
+        "buildlabs_project_id=project:alpha," +
+        "buildlabs_candidate_id=candidate_4," +
+        "buildlabs_sandbox_role=builder",
     );
   });
 
@@ -28,7 +28,7 @@ describe("Daytona sandbox observability", () => {
         },
         "verifier-delivery",
       ),
-    ).toContain("buildlapse_sandbox_role=verifier-delivery");
+    ).toContain("buildlabs_sandbox_role=verifier-delivery");
   });
 
   it("rejects delimiter injection into Daytona telemetry labels", () => {

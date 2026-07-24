@@ -148,7 +148,7 @@ export class BraintrustOrchestrationTrace implements OrchestrationTracePort {
           }
         },
         {
-          name: `buildlapse.orchestration.${event.operation}`,
+          name: `buildlabs.orchestration.${event.operation}`,
           type: "task",
           event: {
             input: redactValue(event.input),

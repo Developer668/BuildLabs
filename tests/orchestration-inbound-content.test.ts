@@ -28,7 +28,7 @@ describe("inbound email content normalization", () => {
         [
           "Move the contact form above the fold.",
           "",
-          "On Wed, Jul 23, 2026 at 4:00 PM Buildlapse wrote:",
+          "On Wed, Jul 23, 2026 at 4:00 PM BuildLabs wrote:",
           "> Old proposal: add a guarantee.",
         ].join("\n"),
         null,

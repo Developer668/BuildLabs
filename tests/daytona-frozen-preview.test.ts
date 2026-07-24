@@ -31,26 +31,26 @@ describe("Daytona frozen preview materialization", () => {
 
     expect(harness.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: `buildlapse-preview-${request.eventId}`,
+        name: `buildlabs-preview-${request.eventId}`,
         snapshot: request.snapshotId,
         public: false,
         ephemeral: true,
         autoStopInterval: 12,
         ttlMinutes: 12,
         labels: {
-          "buildlapse.purpose": "proven-preview",
-          "buildlapse.run-id": request.runId,
-          "buildlapse.event-id": request.eventId,
-          "buildlapse.artifact-id": request.artifactId,
-          "buildlapse.revision": request.revisionHash.slice(0, 32),
-          "buildlapse.effect-key": sha256(request.idempotencyKey).slice(0, 32),
-          "buildlapse.effect-input": frozenPreviewEffectInputDigest(request),
+          "buildlabs.purpose": "proven-preview",
+          "buildlabs.run-id": request.runId,
+          "buildlabs.event-id": request.eventId,
+          "buildlabs.artifact-id": request.artifactId,
+          "buildlabs.revision": request.revisionHash.slice(0, 32),
+          "buildlabs.effect-key": sha256(request.idempotencyKey).slice(0, 32),
+          "buildlabs.effect-input": frozenPreviewEffectInputDigest(request),
         },
       }),
       { timeout: 120 },
     );
     const encodedContainerCommand = Buffer.from(
-      deliveryContainerRunCommand("buildlapse-proof", 3000),
+      deliveryContainerRunCommand("buildlabs-proof", 3000),
       "utf8",
     ).toString("base64");
     expect(
@@ -99,8 +99,8 @@ describe("Daytona frozen preview materialization", () => {
         new Response(null, {
           status: 200,
           headers: {
-            "x-buildlapse-revision": "0".repeat(64),
-            "x-buildlapse-artifact-sha256": request.artifactSha256,
+            "x-buildlabs-revision": "0".repeat(64),
+            "x-buildlabs-artifact-sha256": request.artifactSha256,
           },
         }),
     );
@@ -162,7 +162,7 @@ describe("Daytona frozen preview materialization", () => {
     });
     expect(harness.create).toHaveBeenCalledTimes(1);
     expect(harness.get).toHaveBeenCalledWith(
-      `buildlapse-preview-${request.eventId}`,
+      `buildlabs-preview-${request.eventId}`,
     );
     expect(harness.deleteIsolated).not.toHaveBeenCalled();
   });
@@ -237,7 +237,7 @@ describe("Daytona frozen preview materialization", () => {
 function frozenPreviewRequest(): FrozenPreviewMaterializationRequest {
   const revisionHash = sha256(`frozen revision:${randomUUID()}`);
   return {
-    snapshotId: `buildlapse-12345678-${revisionHash.slice(0, 12)}`,
+    snapshotId: `buildlabs-12345678-${revisionHash.slice(0, 12)}`,
     runId: randomUUID(),
     eventId: randomUUID(),
     artifactId: randomUUID(),
@@ -266,19 +266,19 @@ function frozenPreviewHarness(
     ) =>
       Promise.resolve({
         exitCode: 0,
-        result: "BUILDLAPSE_COMMAND_RESULT_V1\n0\n0\n0\n0\n0\n\n\n",
+        result: "BUILDLABS_COMMAND_RESULT_V1\n0\n0\n0\n0\n0\n\n\n",
       }),
   );
   const startIsolated = vi.fn().mockResolvedValue(undefined);
   const setTtl = vi.fn().mockResolvedValue(undefined);
   const sandboxLabels = {
-    "buildlapse.purpose": "proven-preview",
-    "buildlapse.run-id": request.runId,
-    "buildlapse.event-id": request.eventId,
-    "buildlapse.artifact-id": request.artifactId,
-    "buildlapse.revision": request.revisionHash.slice(0, 32),
-    "buildlapse.effect-key": sha256(request.idempotencyKey).slice(0, 32),
-    "buildlapse.effect-input": frozenPreviewEffectInputDigest(request),
+    "buildlabs.purpose": "proven-preview",
+    "buildlabs.run-id": request.runId,
+    "buildlabs.event-id": request.eventId,
+    "buildlabs.artifact-id": request.artifactId,
+    "buildlabs.revision": request.revisionHash.slice(0, 32),
+    "buildlabs.effect-key": sha256(request.idempotencyKey).slice(0, 32),
+    "buildlabs.effect-input": frozenPreviewEffectInputDigest(request),
   };
   const setLabels = vi.fn((labels: Record<string, string>) => {
     Object.assign(sandboxLabels, labels);
@@ -318,7 +318,7 @@ function frozenPreviewHarness(
   const get = vi.fn((sandboxId: string) =>
     Promise.resolve(
       recoverCreatedSandboxByName &&
-        sandboxId === `buildlapse-preview-${request.eventId}`
+        sandboxId === `buildlabs-preview-${request.eventId}`
         ? isolatedSandbox
         : originalSandbox,
     ),

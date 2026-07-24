@@ -141,7 +141,7 @@ describe("TracedOrchestrationReasoner", () => {
         ],
         verification: {
           origin: "system_policy" as const,
-          policyId: "buildlapse-proof-gate-v1" as const,
+          policyId: "buildlabs-proof-gate-v1" as const,
           buildCommand: "npm run build",
           testCommands: ["npm test"],
           previewCommand: "npm start",
@@ -241,7 +241,7 @@ describe("TracedOrchestrationReasoner", () => {
         ],
         verification: {
           origin: "system_policy" as const,
-          policyId: "buildlapse-proof-gate-v1" as const,
+          policyId: "buildlabs-proof-gate-v1" as const,
           buildCommand: "npm run build",
           testCommands: ["npm test"],
           previewCommand: "npm start",
@@ -399,14 +399,14 @@ describe("BraintrustOrchestrationTrace", () => {
   it("uses a read-only authenticated project lookup for readiness", async () => {
     const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
       Response.json({
-        objects: [{ id: "project-id", name: "Buildlapse" }],
+        objects: [{ id: "project-id", name: "BuildLabs" }],
       }),
     );
     const trace = new BraintrustOrchestrationTrace({
       apiKey: "braintrust-key-with-enough-characters",
       apiUrl: "https://api.braintrust.dev/tenant",
       appUrl: "https://www.braintrust.dev",
-      projectName: "Buildlapse",
+      projectName: "BuildLabs",
       logger: new RecordingBraintrustLogger(),
       fetch: fetchImplementation,
     });
@@ -418,7 +418,7 @@ describe("BraintrustOrchestrationTrace", () => {
       throw new Error("Expected Braintrust readiness to use a URL");
     }
     expect(requestUrl.href).toBe(
-      "https://api.braintrust.dev/tenant/v1/project?limit=1&project_name=Buildlapse",
+      "https://api.braintrust.dev/tenant/v1/project?limit=1&project_name=BuildLabs",
     );
     expect(request).toMatchObject({
       method: "GET",
@@ -433,7 +433,7 @@ describe("BraintrustOrchestrationTrace", () => {
     const logger = new RecordingBraintrustLogger();
     const trace = new BraintrustOrchestrationTrace({
       apiKey: "braintrust-key-with-enough-characters",
-      projectName: "Buildlapse",
+      projectName: "BuildLabs",
       logger,
     });
 
@@ -476,7 +476,7 @@ describe("BraintrustOrchestrationTrace", () => {
     const logger = new RecordingBraintrustLogger();
     const trace = new BraintrustOrchestrationTrace({
       apiKey: "braintrust-key-with-enough-characters",
-      projectName: "Buildlapse",
+      projectName: "BuildLabs",
       logger,
     });
     const projectCorrelation = sha256("project-correlation-metadata-001");
@@ -506,7 +506,7 @@ describe("BraintrustOrchestrationTrace", () => {
     const logger = new RecordingBraintrustLogger();
     const trace = new BraintrustOrchestrationTrace({
       apiKey: "braintrust-key-with-enough-characters",
-      projectName: "Buildlapse",
+      projectName: "BuildLabs",
       logger,
     });
     const sensitiveFailure = new Error(
@@ -533,7 +533,7 @@ describe("BraintrustOrchestrationTrace", () => {
     logger.traceError = new Error("alice@example.com provider failure");
     const trace = new BraintrustOrchestrationTrace({
       apiKey: "braintrust-key-with-enough-characters",
-      projectName: "Buildlapse",
+      projectName: "BuildLabs",
       logger,
     });
 
@@ -557,7 +557,7 @@ describe("BraintrustOrchestrationTrace", () => {
     logger.flushError = new Error("private provider detail");
     const trace = new BraintrustOrchestrationTrace({
       apiKey: "braintrust-key-with-enough-characters",
-      projectName: "Buildlapse",
+      projectName: "BuildLabs",
       logger,
     });
 

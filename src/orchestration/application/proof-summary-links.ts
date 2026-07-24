@@ -55,7 +55,7 @@ export class ProofSummaryLinkCodec {
     }
     this.#publicBaseUrl = publicBaseUrl;
     this.#signingKey = createHmac("sha256", options.secret)
-      .update("buildlapse-proof-summary-signing-key-v1")
+      .update("buildlabs-proof-summary-signing-key-v1")
       .digest();
   }
 
@@ -103,7 +103,7 @@ export class ProofSummaryLinkCodec {
 
   #signature(encodedGrant: string): Buffer {
     return createHmac("sha256", this.#signingKey)
-      .update(`buildlapse-proof-summary-v1:${encodedGrant}`)
+      .update(`buildlabs-proof-summary-v1:${encodedGrant}`)
       .digest()
       .subarray(0, 24);
   }

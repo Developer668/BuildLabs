@@ -120,7 +120,7 @@ function loginToken(link: string): string {
 
 function createCodec(now: () => Date = () => new Date(NOW)) {
   return new CustomerDashboardAccessCodec({
-    publicBaseUrl: "https://orchestrator.buildlapse.example",
+    publicBaseUrl: "https://orchestrator.buildlabs.example",
     secret: Buffer.alloc(32, 11),
     now,
   });

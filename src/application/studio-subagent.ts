@@ -31,7 +31,7 @@ const TOOLS: AgentToolDefinition[] = [
   {
     name: "get_candidate",
     description:
-      "Read the authoritative state of one Buildlapse candidate by its build-run UUID.",
+      "Read the authoritative state of one BuildLabs candidate by its build-run UUID.",
     parameters: {
       type: "object",
       additionalProperties: false,
@@ -42,7 +42,7 @@ const TOOLS: AgentToolDefinition[] = [
   {
     name: "get_candidate_evidence",
     description:
-      "Read bounded proof receipt counts for one Buildlapse candidate. This does not expose raw logs or credentials.",
+      "Read bounded proof receipt counts for one BuildLabs candidate. This does not expose raw logs or credentials.",
     parameters: {
       type: "object",
       additionalProperties: false,
@@ -120,7 +120,7 @@ export class StudioSubagent {
         {
           role: "system",
           content: [
-            "You are the Buildlapse studio operations subagent speaking through ElevenLabs.",
+            "You are the BuildLabs studio operations subagent speaking through ElevenLabs.",
             "Fireworks is the reasoning provider; use the supplied tools for all candidate facts and actions.",
             "Be concise and natural for speech. Never invent status, evidence, preview availability, or actions.",
             "A cancellation requires an explicit operator request and a fresh get_candidate call in this turn.",

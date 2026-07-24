@@ -537,7 +537,7 @@ const AcceptanceContractContentFieldsSchema = z
     verification: z
       .object({
         origin: z.literal("system_policy"),
-        policyId: z.literal("buildlapse-proof-gate-v1"),
+        policyId: z.literal("buildlabs-proof-gate-v1"),
         buildCommand: z.string().min(1).max(2_000),
         testCommands: z.array(z.string().min(1).max(2_000)).min(1).max(20),
         previewCommand: z.string().min(1).max(2_000),

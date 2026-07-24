@@ -1,4 +1,4 @@
-# Buildlapse
+# BuildLabs
 
 **Build anything from a conversation — and prove it before it ships.**
 
@@ -12,7 +12,7 @@ passwordless, explicitly unverified build feed as work happens, but only a
 **proven** build can become an approvable preview, production deployment, or
 delivered result.
 
-Most AI builders optimize for a fast first draft. Buildlapse optimizes for
+Most AI builders optimize for a fast first draft. BuildLabs optimizes for
 **proving the result is correct before the customer ever sees it.**
 
 > **Status:** backend implementation in progress. The repository contains the
@@ -158,7 +158,7 @@ last healthy release stays available.
 
 ## Sponsor stack
 
-| Sponsor | Role in Buildlapse |
+| Sponsor | Role in BuildLabs |
 | ------- | ------------------ |
 | **Daytona** | Isolated builder plus fresh command and delivery verifiers per proof attempt; raw operator WIP, sanitized customer observation, and frozen proven previews remain distinct. |
 | **Fireworks AI** | All reasoning + code-gen: voice, general orchestration, build agents, and the trained Patch Model. |
@@ -167,7 +167,7 @@ last healthy release stays available.
 | **CopilotKit** | The role-separated studio and customer workspace: contract cards, candidate comparison, diffs, steering, component tree, and four live panes. |
 | **CodeRabbit** | Structured headless CLI review per frozen candidate; findings feed in-loop fixes and critical findings block proof. |
 
-**Dropped:** WorkOS. Buildlapse uses a narrower application-owned boundary:
+**Dropped:** WorkOS. BuildLabs uses a narrower application-owned boundary:
 separate operator access and project-scoped passwordless customer sessions.
 
 ## Sponsor integration surfaces
@@ -183,7 +183,7 @@ separate operator access and project-scoped passwordless customer sessions.
   delivery build checks, the controller applies Daytona's persisted
   `networkBlockAll` outbound firewall before starting proof services and
   reapplies it after snapshot restart. The pinned
-  `buildlapse-dind-browser-v2` snapshot uses stable differential
+  `buildlabs-dind-browser-v2` snapshot uses stable differential
   Playwright/Chromium paint evidence with same-origin browser traffic. Starting
   from the root and contract HTTP paths, it deterministically crawls at most 32
   frozen-DOM routes and inspects up to 16 vertical viewport tiles per page;

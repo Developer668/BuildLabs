@@ -551,17 +551,17 @@ export function curatePatchTrainingRecord(
 
   const projectScopeId = opaqueDigest(
     key,
-    "buildlapse.patch-model.project",
+    "buildlabs.patch-model.project",
     source.contract.projectId,
   );
-  const exampleId = opaqueDigest(key, "buildlapse.patch-model.example", {
+  const exampleId = opaqueDigest(key, "buildlabs.patch-model.example", {
     projectId: source.contract.projectId,
     runId: source.runId,
     baseRevisionHash: source.patch.baseRevisionHash,
     revisionHash: source.patch.revisionHash,
     diffSha256: source.patch.diffSha256,
   });
-  const splitDigest = opaqueDigest(key, "buildlapse.patch-model.partition", {
+  const splitDigest = opaqueDigest(key, "buildlabs.patch-model.partition", {
     projectId: source.contract.projectId,
     contractId: source.contract.contractId,
     requestedChangeRequirementId: source.selection.requestedChangeRequirementId,
@@ -574,7 +574,7 @@ export function curatePatchTrainingRecord(
       : "train";
   const sourceEvidenceDigest = opaqueDigest(
     key,
-    "buildlapse.patch-model.evidence",
+    "buildlabs.patch-model.evidence",
     {
       before: receiptIdentities(source.beforeReceipts),
       after: receiptIdentities(source.afterReceipts),
@@ -632,23 +632,23 @@ export function curatePatchTrainingRecord(
       dataUseConsent: "granted",
       consentReceiptDigest: opaqueDigest(
         key,
-        "buildlapse.patch-model.consent",
+        "buildlabs.patch-model.consent",
         source.consent,
       ),
       sourceEvidenceDigest,
       baseRevisionDigest: opaqueDigest(
         key,
-        "buildlapse.patch-model.revision",
+        "buildlabs.patch-model.revision",
         source.patch.baseRevisionHash,
       ),
       candidateRevisionDigest: opaqueDigest(
         key,
-        "buildlapse.patch-model.revision",
+        "buildlabs.patch-model.revision",
         source.patch.revisionHash,
       ),
       diffDigest: opaqueDigest(
         key,
-        "buildlapse.patch-model.diff",
+        "buildlabs.patch-model.diff",
         source.patch.diffSha256,
       ),
       curationPolicyDigest: PATCH_CURATION_POLICY_DIGEST,

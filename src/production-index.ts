@@ -55,7 +55,7 @@ const unexpectedExit = !stopping;
 
 if (unexpectedExit) {
   process.stderr.write(
-    "A required Buildlapse backend process stopped; shutting down the complete runtime\n",
+    "A required BuildLabs backend process stopped; shutting down the complete runtime\n",
   );
   shutdown("SIGTERM");
 }

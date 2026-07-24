@@ -98,9 +98,9 @@ describe("Daytona source archive validation", () => {
     git(source, ["add", "--all"]);
     git(source, [
       "-c",
-      "user.name=Buildlapse Test",
+      "user.name=BuildLabs Test",
       "-c",
-      "user.email=test@buildlapse.invalid",
+      "user.email=test@buildlabs.invalid",
       "commit",
       "--quiet",
       "--message",
@@ -152,7 +152,7 @@ describe("Daytona source archive validation", () => {
     source: string;
     archive: string;
   }> {
-    const directory = await mkdtemp(join(tmpdir(), "buildlapse-archive-test-"));
+    const directory = await mkdtemp(join(tmpdir(), "buildlabs-archive-test-"));
     temporaryDirectories.push(directory);
     const source = join(directory, "source");
     await mkdir(source);

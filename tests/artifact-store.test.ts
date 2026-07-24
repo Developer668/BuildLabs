@@ -40,7 +40,7 @@ describe("FilesystemArtifactStore", () => {
       runId,
       fixture.revision,
       fixture.workspace,
-      "buildlapse-dind-browser-v2",
+      "buildlabs-dind-browser-v2",
     );
 
     const resolvedPath = await resolveArtifactFileForDownload(
@@ -61,7 +61,7 @@ describe("FilesystemArtifactStore", () => {
       sha256: sha256(archive),
       sizeBytes: archive.byteLength,
       dockerfilePath: "Dockerfile",
-      daytonaSnapshot: "buildlapse-dind-browser-v2",
+      daytonaSnapshot: "buildlabs-dind-browser-v2",
     });
   });
 
@@ -71,7 +71,7 @@ describe("FilesystemArtifactStore", () => {
       randomUUID(),
       fixture.revision,
       fixture.workspace,
-      "buildlapse-dind-browser-v2",
+      "buildlabs-dind-browser-v2",
     );
     const archivePath = await resolveArtifactFileForDownload(
       fixture.artifactDirectory,
@@ -95,7 +95,7 @@ describe("FilesystemArtifactStore", () => {
         randomUUID(),
         fixture.revision,
         fixture.workspace,
-        "buildlapse-dind-browser-v2",
+        "buildlabs-dind-browser-v2",
       ),
     ).rejects.toThrow("Candidate workspace contains a non-regular entry");
   });
@@ -109,7 +109,7 @@ describe("FilesystemArtifactStore", () => {
         randomUUID(),
         fixture.revision,
         fixture.workspace,
-        "buildlapse-dind-browser-v2",
+        "buildlabs-dind-browser-v2",
       ),
     ).rejects.toThrow("Candidate workspace must not contain Git metadata");
   });
@@ -120,7 +120,7 @@ describe("FilesystemArtifactStore", () => {
     store: FilesystemArtifactStore;
     workspace: ExportedWorkspace;
   }> {
-    const root = await mkdtemp(join(tmpdir(), "buildlapse-artifact-store-"));
+    const root = await mkdtemp(join(tmpdir(), "buildlabs-artifact-store-"));
     temporaryDirectories.push(root);
     const artifactDirectory = join(root, "artifacts");
     const workspaceDirectory = join(root, "workspace");
@@ -133,7 +133,7 @@ describe("FilesystemArtifactStore", () => {
       ),
       writeFile(
         join(workspaceDirectory, "src", "index.js"),
-        "console.log('Buildlapse candidate');\n",
+        "console.log('BuildLabs candidate');\n",
       ),
     ]);
 

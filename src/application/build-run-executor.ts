@@ -1098,7 +1098,7 @@ function errorCode(error: unknown): string {
 }
 
 function snapshotNameFor(runId: string, revision: FrozenRevision): string {
-  return `buildlapse-${runId.slice(0, 8)}-${revision.sourceDigest.slice(0, 12)}`;
+  return `buildlabs-${runId.slice(0, 8)}-${revision.sourceDigest.slice(0, 12)}`;
 }
 
 async function withAbort<T>(

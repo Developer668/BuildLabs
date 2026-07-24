@@ -1,8 +1,8 @@
-# Buildlapse
+# BuildLabs
 
 **Build anything from a conversation — and prove it before it ships.**
 
-> A prospect talks to Buildlapse's voice agent about the website or application
+> A prospect talks to BuildLabs's voice agent about the website or application
 > they want. That conversation becomes a transcript, the transcript becomes an
 > Acceptance Contract, and a durable orchestrator emails a versioned proposal
 > and verifies the matching Stripe payment before dispatching parallel build
@@ -13,7 +13,7 @@
 > During construction, the customer can watch a clearly labeled, sanitized WIP
 > projection in an authenticated dashboard; observation never counts as proof.
 
-Most AI builders optimize for producing a first draft fast. Buildlapse optimizes
+Most AI builders optimize for producing a first draft fast. BuildLabs optimizes
 for **proving the result is correct before the customer ever sees it.**
 
 > **Status:** backend implementation in progress. This repository contains the
@@ -44,10 +44,10 @@ for **proving the result is correct before the customer ever sees it.**
 
 ---
 
-## 1. What Buildlapse is
+## 1. What BuildLabs is
 
-Buildlapse is a **conversation-to-delivered-software pipeline**. A caller
-describes what they need in plain language; Buildlapse sells the engagement,
+BuildLabs is a **conversation-to-delivered-software pipeline**. A caller
+describes what they need in plain language; BuildLabs sells the engagement,
 captures the requirements and contact details, builds several real candidate
 implementations in parallel after verified payment, proves the best one against
 an automatically derived contract, **deploys it to production**, and emails the
@@ -72,7 +72,7 @@ Three commitments define the product:
 
 Open scope and a strong proof guarantee pull against each other. A constrained
 lead-gen site can be verified tightly; an arbitrary application cannot be
-auto-verified to the same standard. Buildlapse resolves this by making the proof
+auto-verified to the same standard. BuildLabs resolves this by making the proof
 gate **adaptive and per-project** rather than a fixed rubric (see §7). The
 guarantee is therefore strongest for well-bounded sites and honestly weaker for
 open-ended applications — the system reports *what* it proved for each build, not
@@ -599,7 +599,7 @@ Described in detail in §7.
 The hosting/deploy path is settled; other choices are recommended defaults and
 easy to change.
 
-### 4.1 Platform (Buildlapse itself)
+### 4.1 Platform (BuildLabs itself)
 
 | Layer | Choice | Notes |
 | ----- | ------ | ----- |
@@ -671,7 +671,7 @@ project-scoped passwordless customer sessions are separate application-owned
 boundaries rather than a general multi-tenant identity platform. Fly.io and
 Resend are non-sponsor infrastructure (§4).
 
-| Sponsor | Responsibility in Buildlapse | What the judges see |
+| Sponsor | Responsibility in BuildLabs | What the judges see |
 | ------- | ---------------------------- | ------------------- |
 | **Daytona** | One isolated builder per slot plus two controller-created verifiers hydrated from one content-attested export. The command verifier runs host checks; the untouched delivery verifier builds the container, then activates Daytona's persisted [`networkBlockAll`](https://www.daytona.io/docs/en/network-limits/) outbound firewall before starting or rendering it. The seal is reapplied after a snapshot restart, and only that sealed delivery verifier can become the accepted snapshot/preview. Its pinned v2 snapshot runs Playwright against Chromium with same-origin traffic only. From the root and controller-issued HTTP paths it performs a deterministic frozen-DOM BFS capped at 32 routes, classifies actual non-HTML responses, and inspects bounded vertical viewport tiles across every HTML page. It replays a bounded graph of up to 15 visible controls from fresh page loads: controller-owned values drive normal forms one field at a time before prevented submit, every bounded select/radio/checkbox alternative is sampled, same-page fragment links are clicked, authored CSS hover/focus states are inspected terminally, and explicit handler-driven hover/focus states must produce a semantic transition before continuing through the graph. A child reuses a parent's pixel proof only when tile offset, dimensions, candidate geometry, and PNG bytes match exactly; receipts emit duplicate visible-text states and tile digests once. Initial WebSockets and every HTTP/WebSocket attempt after load fail the route; no aborted loading state can count as proof. HTTP text counts only when computed layout, clipping, stable paint reachability, contrast, and effective opacity make it visible; all tile digests are bound into the receipt and bounded PNG bytes stay controller-only for visual inspection. Uninspectable canvas/media/frame surfaces, embedded data/blob imagery, generated pseudo-element content, JavaScript anchors, unsupported form controls, unobservable stateful actions, unexplored or oversized interaction graphs, crawl overflow, and oversized documents fail closed. Sandboxes carry run/project/candidate/role labels for [OpenTelemetry](https://www.daytona.io/docs/en/observability/otel-collection/), and the SDK is disposed on shutdown. [Process isolation](https://www.daytona.io/docs/en/process-code-execution/) · [Snapshots](https://www.daytona.io/docs/en/snapshots/) | Up to four real builds are visible live, while the proof record shows that builder side effects, post-build egress, hidden, below-fold, hover/focus/click-revealed claims, unlisted reachable routes, and transient background pixels could not contaminate delivery. |
 | **Fireworks AI** | Every reasoning and code-generation model: the voice agent's brain, the general orchestration agent, the build agents, and the trained **Patch Model** for revisions. Tool trajectories use [interleaved reasoning](https://docs.fireworks.ai/guides/reasoning) plus isolated [prompt caching](https://docs.fireworks.ai/guides/prompt-caching); RFT remains the training path. [RFT](https://docs.fireworks.ai/fine-tuning/how-rft-works) | The conversation, orchestration decisions, generated code, and patches run on Fireworks; trace metadata shows bounded model latency/cache/token performance without exposing reasoning. |
@@ -865,7 +865,7 @@ These are intentional gaps, not oversights. Do not implement them until chosen.
 - **General multi-tenant identity** — WorkOS remains dropped. The implemented
   target is narrower: separate operator auth plus application-owned,
   project-scoped passwordless customer sessions.
-- **No prior-codebase reuse** — Buildlapse is built fresh. Earlier projects
+- **No prior-codebase reuse** — BuildLabs is built fresh. Earlier projects
   (including BuildStax) are **not** to be reused or copied.
 
 > **Now decided (no longer deferred):** hosting, payment, and customer
@@ -910,7 +910,7 @@ Use a hypothetical company, **Mission Peak Electric**.
    digest and health verification, the production URL is auto-emailed to the
    caller. Open it, submit an estimate request, and see it captured.
 
-The payoff: Buildlapse didn't just generate something attractive — it delivered a
+The payoff: BuildLabs didn't just generate something attractive — it delivered a
 **proven, production-hosted result** from a phone conversation, automatically.
 
 ---

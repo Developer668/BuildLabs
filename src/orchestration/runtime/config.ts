@@ -71,7 +71,7 @@ const OrchestrationConfigSchema = z
       .string()
       .min(1)
       .max(4_096)
-      .default(".buildlapse/orchestration.db"),
+      .default(".buildlabs/orchestration.db"),
     ORCHESTRATION_ENCRYPTION_KEY_BASE64: EncryptionKeySchema,
     ORCHESTRATION_INTERNAL_TOKEN: SecretSchema.min(32),
     ORCHESTRATION_REPLY_DOMAIN: z
@@ -189,7 +189,7 @@ const OrchestrationConfigSchema = z
     BRAINTRUST_APP_URL: HttpsBaseUrlSchema.default(
       "https://www.braintrust.dev",
     ),
-    BRAINTRUST_PROJECT_NAME: z.string().min(1).max(512).default("Buildlapse"),
+    BRAINTRUST_PROJECT_NAME: z.string().min(1).max(512).default("BuildLabs"),
     STRIPE_SECRET_KEY: SecretSchema,
     STRIPE_WEBHOOK_SECRET: SecretSchema,
     STRIPE_SUCCESS_URL: HttpsUrlSchema,
@@ -199,7 +199,7 @@ const OrchestrationConfigSchema = z
       .string()
       .min(1)
       .max(250)
-      .default("Buildlapse software engagement"),
+      .default("BuildLabs software engagement"),
     RESEND_API_KEY: SecretSchema,
     RESEND_WEBHOOK_SECRET: SecretSchema,
     BUILD_BACKEND_BASE_URL: SecureServiceUrlSchema.default(
@@ -240,7 +240,7 @@ const OrchestrationConfigSchema = z
       .min(1)
       .max(24)
       .regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/)
-      .default("buildlapse"),
+      .default("buildlabs"),
     FLYCTL_BIN: z.string().min(1).max(1_024).default("flyctl"),
     FLY_HEALTH_PATH: z
       .string()
@@ -258,7 +258,7 @@ const OrchestrationConfigSchema = z
       .string()
       .min(1)
       .max(256)
-      .default("buildlapse-dind-v1"),
+      .default("buildlabs-dind-v1"),
   })
   .superRefine((config, context) => {
     if (

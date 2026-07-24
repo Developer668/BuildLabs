@@ -21,12 +21,12 @@ if (existsSync(".env")) {
 
 const config = loadConfig();
 const store = new SqliteRunStore({
-  path: config.BUILDLAPSE_DATABASE_PATH,
-  slotCount: config.BUILDLAPSE_SLOT_COUNT,
+  path: config.BUILDLABS_DATABASE_PATH,
+  slotCount: config.BUILDLABS_SLOT_COUNT,
 });
 const sandboxProvider = new DaytonaSandboxProvider(config);
 const artifactStore = new FilesystemArtifactStore(
-  config.BUILDLAPSE_ARTIFACT_DIR,
+  config.BUILDLABS_ARTIFACT_DIR,
 );
 const model = new FireworksModel(config);
 const reviewer = new CodeRabbitCli(config);
@@ -44,7 +44,7 @@ const executor = new BuildRunExecutor({
   trace,
 });
 const scheduler = new BuildScheduler(store, executor, {
-  leaseMilliseconds: config.BUILDLAPSE_LEASE_MILLISECONDS,
+  leaseMilliseconds: config.BUILDLABS_LEASE_MILLISECONDS,
 });
 const server = createHttpServer({
   config,

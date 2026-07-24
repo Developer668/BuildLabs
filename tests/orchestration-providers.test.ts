@@ -150,8 +150,8 @@ function stripeAdapter(client: StripePaymentClient): StripePaymentAdapter {
   return new StripePaymentAdapter({
     secretKey: stripeSecret,
     webhookSecret: stripeWebhookSecret,
-    successUrl: "https://buildlapse.example/payment/success",
-    cancelUrl: "https://buildlapse.example/payment/cancel",
+    successUrl: "https://buildlabs.example/payment/success",
+    cancelUrl: "https://buildlabs.example/payment/cancel",
     client,
   });
 }
@@ -174,12 +174,12 @@ describe("StripePaymentAdapter", () => {
       object: "list",
       data: [
         {
-          id: "we_buildlapse",
+          id: "we_buildlabs",
           object: "webhook_endpoint",
           api_version: "2026-06-24.dahlia",
           application: null,
           created: 1_753_248_000,
-          description: "Buildlapse orchestration",
+          description: "BuildLabs orchestration",
           enabled_events: [
             "checkout.session.completed",
             "checkout.session.async_payment_succeeded",
@@ -187,7 +187,7 @@ describe("StripePaymentAdapter", () => {
           livemode: false,
           metadata: {},
           status: "enabled",
-          url: "https://orchestrator.buildlapse.example/v1/orchestration/webhooks/stripe",
+          url: "https://orchestrator.buildlabs.example/v1/orchestration/webhooks/stripe",
         },
       ],
       has_more: false,
@@ -201,10 +201,10 @@ describe("StripePaymentAdapter", () => {
     const adapter = new StripePaymentAdapter({
       secretKey: stripeSecret,
       webhookSecret: stripeWebhookSecret,
-      successUrl: "https://buildlapse.example/payment/success",
-      cancelUrl: "https://buildlapse.example/payment/cancel",
+      successUrl: "https://buildlabs.example/payment/success",
+      cancelUrl: "https://buildlabs.example/payment/cancel",
       webhookEndpointUrl:
-        "https://orchestrator.buildlapse.example/v1/orchestration/webhooks/stripe",
+        "https://orchestrator.buildlabs.example/v1/orchestration/webhooks/stripe",
       client,
     });
 
@@ -654,8 +654,8 @@ describe("StripePaymentAdapter", () => {
     const adapter = new StripePaymentAdapter({
       secretKey: stripeSecret,
       webhookSecret: stripeWebhookSecret,
-      successUrl: "https://buildlapse.example/payment/success",
-      cancelUrl: "https://buildlapse.example/payment/cancel",
+      successUrl: "https://buildlabs.example/payment/success",
+      cancelUrl: "https://buildlabs.example/payment/cancel",
       expectedLivemode: true,
       client,
     });
@@ -690,15 +690,15 @@ function resendClient(): {
       object: "email",
       id: "email-out-one",
       to: ["customer@example.com"],
-      from: "Buildlapse <projects@buildlapse.example>",
+      from: "BuildLabs <projects@buildlabs.example>",
       created_at: "2026-07-23T12:00:00.000Z",
       subject: "Your proven preview",
       html: "<p>Preview</p>",
       text: "Preview",
       bcc: null,
       cc: null,
-      reply_to: ["project@reply.buildlapse.example"],
-      message_id: "<email-out-one@reply.buildlapse.example>",
+      reply_to: ["project@reply.buildlabs.example"],
+      message_id: "<email-out-one@reply.buildlabs.example>",
       last_event: "delivered",
       scheduled_at: null,
       tags: [{ name: "project", value: "project-one" }],
@@ -712,14 +712,14 @@ function resendClient(): {
       data: {
         object: "email",
         id: "email-in-one",
-        to: ["reply@buildlapse.example"],
+        to: ["reply@buildlabs.example"],
         from: "customer@example.com",
         created_at: "2026-07-23T12:00:00.000Z",
         subject: "Re: Proposal v1",
         bcc: null,
-        cc: ["operator@buildlapse.example"],
+        cc: ["operator@buildlabs.example"],
         reply_to: ["customer@example.com"],
-        received_for: ["reply@buildlapse.example"],
+        received_for: ["reply@buildlabs.example"],
         html: "<p>Please make the logo larger.</p>",
         text: "Please make the logo larger.",
         headers: {
@@ -749,8 +749,8 @@ function resendClient(): {
         has_more: false,
         data: [
           {
-            id: "domain-buildlapse",
-            name: "buildlapse.example",
+            id: "domain-buildlabs",
+            name: "buildlabs.example",
             status: "verified",
             created_at: "2026-07-23T12:00:00.000Z",
             region: "us-east-1",
@@ -761,7 +761,7 @@ function resendClient(): {
           },
           {
             id: "domain-reply",
-            name: "reply.buildlapse.example",
+            name: "reply.buildlabs.example",
             status: "verified",
             created_at: "2026-07-23T12:00:00.000Z",
             region: "us-east-1",
@@ -825,7 +825,7 @@ function resendHealthFetch(
           has_more: false,
           data: [
             {
-              name: "buildlapse.example",
+              name: "buildlabs.example",
               status: "verified",
               capabilities: {
                 sending: "enabled",
@@ -833,7 +833,7 @@ function resendHealthFetch(
               },
             },
             {
-              name: "reply.buildlapse.example",
+              name: "reply.buildlabs.example",
               status: "verified",
               capabilities: {
                 sending: "disabled",
@@ -857,7 +857,7 @@ function resendHealthFetch(
   });
 }
 
-const resendWebhookKey = Buffer.from("buildlapse-resend-webhook-fixture-key");
+const resendWebhookKey = Buffer.from("buildlabs-resend-webhook-fixture-key");
 const resendWebhookSecret = `whsec_${resendWebhookKey.toString("base64")}`;
 
 function signResendWebhook(
@@ -880,8 +880,8 @@ describe("ResendMailAdapter", () => {
       webhookSecret: resendWebhookSecret,
       client: fixture.client,
       healthFetch,
-      sendingDomain: "buildlapse.example",
-      receivingDomain: "reply.buildlapse.example",
+      sendingDomain: "buildlabs.example",
+      receivingDomain: "reply.buildlabs.example",
     });
 
     await expect(adapter.health()).resolves.toBeUndefined();
@@ -896,9 +896,9 @@ describe("ResendMailAdapter", () => {
     const fixture = resendClient();
     const healthFetch = resendHealthFetch([
       {
-        id: "wh_buildlapse",
+        id: "wh_buildlabs",
         endpoint:
-          "https://orchestrator.buildlapse.example/v1/orchestration/webhooks/resend",
+          "https://orchestrator.buildlabs.example/v1/orchestration/webhooks/resend",
         created_at: "2026-07-23T12:00:00.000Z",
         status: "enabled",
         events: [
@@ -916,7 +916,7 @@ describe("ResendMailAdapter", () => {
       client: fixture.client,
       healthFetch,
       webhookEndpointUrl:
-        "https://orchestrator.buildlapse.example/v1/orchestration/webhooks/resend",
+        "https://orchestrator.buildlabs.example/v1/orchestration/webhooks/resend",
     });
 
     await expect(adapter.health()).resolves.toBeUndefined();
@@ -988,10 +988,10 @@ describe("ResendMailAdapter", () => {
 
     await expect(
       adapter.send({
-        from: "Buildlapse <projects@buildlapse.example>",
+        from: "BuildLabs <projects@buildlabs.example>",
         to: "customer@example.com",
-        subject: "Your Buildlapse proposal v1",
-        replyTo: "reply@buildlapse.example",
+        subject: "Your BuildLabs proposal v1",
+        replyTo: "reply@buildlabs.example",
         text: "Proposal v1",
         html: "<p>Proposal v1</p>",
         tags: [
@@ -999,7 +999,7 @@ describe("ResendMailAdapter", () => {
           { name: "message_kind", value: "proposal" },
         ],
         headers: {
-          "Message-ID": "<proposal-one@messages.buildlapse.invalid>",
+          "Message-ID": "<proposal-one@messages.buildlabs.invalid>",
           "In-Reply-To": "<customer-intake@example.com>",
           References: "<customer-intake@example.com>",
         },
@@ -1013,10 +1013,10 @@ describe("ResendMailAdapter", () => {
     expect(fixture.send).toHaveBeenCalledTimes(1);
     expect(fixture.send).toHaveBeenCalledWith(
       {
-        from: "Buildlapse <projects@buildlapse.example>",
+        from: "BuildLabs <projects@buildlabs.example>",
         to: ["customer@example.com"],
-        subject: "Your Buildlapse proposal v1",
-        replyTo: ["reply@buildlapse.example"],
+        subject: "Your BuildLabs proposal v1",
+        replyTo: ["reply@buildlabs.example"],
         text: "Proposal v1",
         html: "<p>Proposal v1</p>",
         tags: [
@@ -1024,7 +1024,7 @@ describe("ResendMailAdapter", () => {
           { name: "message_kind", value: "proposal" },
         ],
         headers: {
-          "Message-ID": "<proposal-one@messages.buildlapse.invalid>",
+          "Message-ID": "<proposal-one@messages.buildlabs.invalid>",
           "In-Reply-To": "<customer-intake@example.com>",
           References: "<customer-intake@example.com>",
         },
@@ -1065,10 +1065,10 @@ describe("ResendMailAdapter", () => {
       requestTimeoutMilliseconds: 1,
     });
     const request = {
-      from: "Buildlapse <projects@buildlapse.example>",
+      from: "BuildLabs <projects@buildlabs.example>",
       to: "customer@example.com",
-      subject: "Your Buildlapse proposal v1",
-      replyTo: "reply@buildlapse.example",
+      subject: "Your BuildLabs proposal v1",
+      replyTo: "reply@buildlabs.example",
       text: "Proposal v1",
       html: "<p>Proposal v1</p>",
       tags: [{ name: "project", value: "project-one" }],
@@ -1099,10 +1099,10 @@ describe("ResendMailAdapter", () => {
 
     await expect(
       adapter.send({
-        from: "Buildlapse <projects@buildlapse.example>",
+        from: "BuildLabs <projects@buildlabs.example>",
         to: "customer@example.com",
-        subject: "Your Buildlapse proposal v1",
-        replyTo: "reply@buildlapse.example",
+        subject: "Your BuildLabs proposal v1",
+        replyTo: "reply@buildlabs.example",
         text: "Proposal v1",
         html: "<p>Proposal v1</p>",
         tags: [{ name: "project", value: "project-one" }],
@@ -1142,10 +1142,10 @@ describe("ResendMailAdapter", () => {
         email_id: "email-in-one",
         created_at: "2026-07-23T12:00:00.000Z",
         from: "customer@example.com",
-        to: ["reply@buildlapse.example"],
+        to: ["reply@buildlabs.example"],
         bcc: [],
         cc: [],
-        received_for: ["reply@buildlapse.example"],
+        received_for: ["reply@buildlabs.example"],
         message_id: "<customer-reply-one@example.com>",
         subject: "Re: Proposal v1",
         attachments: [],
@@ -1205,7 +1205,7 @@ describe("ResendMailAdapter", () => {
           Buffer.from(
             [
               "From: customer@example.com",
-              "To: reply@buildlapse.example",
+              "To: reply@buildlabs.example",
               "Subject: Re: Proposal v1",
               "Message-ID: <customer-reply-one@example.com>",
               "Authentication-Results: mx.resend.com; dkim=pass header.d=example.com",
@@ -1244,7 +1244,7 @@ describe("ResendMailAdapter", () => {
       data: {
         created_at: "2026-07-23T12:00:00.000Z",
         email_id: "email-out-one",
-        from: "projects@buildlapse.example",
+        from: "projects@buildlabs.example",
         to: ["customer@example.com"],
         subject: "Production delivery",
         tags: {
@@ -1259,7 +1259,7 @@ describe("ResendMailAdapter", () => {
       data: {
         created_at: "2026-07-23T12:00:00.000Z",
         email_id: "email-out-one",
-        from: "projects@buildlapse.example",
+        from: "projects@buildlabs.example",
         to: ["customer@example.com"],
         subject: "Production delivery",
         tags: {
@@ -1279,7 +1279,7 @@ describe("ResendMailAdapter", () => {
       data: {
         created_at: "2026-07-23T12:00:00.000Z",
         email_id: "email-out-one",
-        from: "projects@buildlapse.example",
+        from: "projects@buildlabs.example",
         to: ["customer@example.com"],
         subject: "Production delivery",
         tags: {
@@ -1358,7 +1358,7 @@ describe("ResendMailAdapter", () => {
       data: {
         created_at: "2026-07-23T12:00:00.000Z",
         email_id: "email-out-one",
-        from: "projects@buildlapse.example",
+        from: "projects@buildlabs.example",
         to: ["customer@example.com"],
         subject: "Proposal",
       },

@@ -21,7 +21,7 @@ import { attestPatchCheckpointResult } from "../src/lib/patch-checkpoint-attesta
 
 const ATTESTATION_KEY = "patch-checkpoint-controller-key!".repeat(2);
 const BASE_MODEL_RESOURCE = "accounts/fireworks/models/qwen3-4b";
-const CANDIDATE_MODEL_RESOURCE = "accounts/buildlapse/models/patch-model-v1";
+const CANDIDATE_MODEL_RESOURCE = "accounts/buildlabs/models/patch-model-v1";
 
 type DatasetInit = Parameters<BraintrustPatchModelSdk["initDataset"]>[0];
 type ExperimentInit = Parameters<BraintrustPatchModelSdk["initExperiment"]>[0];
@@ -305,7 +305,7 @@ describe("Braintrust Patch Model datasets and experiments", () => {
 
     expect(publication).toMatchObject({
       projectScopeId: bundle.projectScopeId,
-      projectName: `buildlapse-patch-${bundle.projectScopeId}`,
+      projectName: `buildlabs-patch-${bundle.projectScopeId}`,
       training: {
         datasetName: `patch-training-v1-${bundle.bundleDigest.slice(0, 16)}`,
         split: "train",
@@ -440,7 +440,7 @@ describe("Braintrust Patch Model datasets and experiments", () => {
     );
     expect(loggedPayloads).not.toContain("accounts/fireworks/models/qwen3-4b");
     expect(loggedPayloads).not.toContain(
-      "accounts/buildlapse/models/patch-model-v1",
+      "accounts/buildlabs/models/patch-model-v1",
     );
     expect(loggedPayloads).not.toContain("braintrust-secret-key");
     expect(loggedPayloads).not.toContain(ATTESTATION_KEY);

@@ -1,13 +1,13 @@
 # AGENTS.md
 
-Guidance for AI and human contributors working in the **Buildlapse** repository.
+Guidance for AI and human contributors working in the **BuildLabs** repository.
 Read this before making changes. The authoritative product definition is
 [`PRODUCT_SPEC.md`](./PRODUCT_SPEC.md); when this file and the spec disagree, the
 spec wins — then update this file to match.
 
-## What Buildlapse is
+## What BuildLabs is
 
-Buildlapse turns a **conversation into delivered software**: a caller describes a
+BuildLabs turns a **conversation into delivered software**: a caller describes a
 website or application, a voice agent sells the engagement and captures the
 requirements, a durable orchestrator versions the proposal and contract,
 collects and verifies the agreed Stripe payment, and only then sends work to
@@ -20,7 +20,7 @@ until it is **proven**.
 
 ## Prime directive
 
-**Buildlapse never promotes or delivers a build until it is proven against what
+**BuildLabs never promotes or delivers a build until it is proven against what
 the caller actually asked for.** An authenticated customer may watch a
 sanitized surface labeled `UNVERIFIED WIP`; observation is not approval,
 preview, proof, or delivery. "Proven" is defined by the automated proof gate:
@@ -245,7 +245,7 @@ Intentional gaps. Do not implement or add dependencies on them until chosen.
   output as proof. Every receipt and artifact uses the controller-computed
   source-content digest, and delivery starts in a separate fresh verifier.
 - **MUST NOT** reuse or copy any prior/other codebase (e.g. **BuildStax**) —
-  build Buildlapse fresh.
+  build BuildLabs fresh.
 - **MUST NOT** wire the deferred Plivo transport or excluded vendors (Vercel,
   v0).
 - **MUST NOT** mix customer data across projects; training data is opt-in and

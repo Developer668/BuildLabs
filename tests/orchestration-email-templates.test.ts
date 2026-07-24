@@ -15,7 +15,7 @@ describe("customer orchestration email templates", () => {
     const verification = emailVerificationEmail({
       customerName: "Jordan",
       verificationUrl:
-        "https://orchestrator.buildlapse.example/v1/orchestration/customer-dashboard/access#token=login.v1.signed",
+        "https://orchestrator.buildlabs.example/v1/orchestration/customer-dashboard/access#token=login.v1.signed",
       replyTo: "project+opaque@example.com",
     });
     expect(verification.text).toContain("passwordless");
@@ -27,7 +27,7 @@ describe("customer orchestration email templates", () => {
       customerName: "Jordan",
       projectTitle: "Mission Peak Electric website",
       dashboardUrl:
-        "https://orchestrator.buildlapse.example/v1/orchestration/customer-dashboard/access#token=login.v1.signed",
+        "https://orchestrator.buildlabs.example/v1/orchestration/customer-dashboard/access#token=login.v1.signed",
       replyTo: "project+opaque@example.com",
     });
     expect(dashboard.text).toContain("build agents");
@@ -36,7 +36,7 @@ describe("customer orchestration email templates", () => {
     const reissue = customerDashboardLoginEmail({
       customerName: "Jordan",
       dashboardUrl:
-        "https://orchestrator.buildlapse.example/v1/orchestration/customer-dashboard/access#token=login.v1.signed",
+        "https://orchestrator.buildlabs.example/v1/orchestration/customer-dashboard/access#token=login.v1.signed",
       emailVerified: true,
       replyTo: "project+opaque@example.com",
     });
@@ -45,7 +45,7 @@ describe("customer orchestration email templates", () => {
 
     const firstVerification = customerDashboardLoginEmail({
       dashboardUrl:
-        "https://orchestrator.buildlapse.example/v1/orchestration/customer-dashboard/access#token=login.v1.signed",
+        "https://orchestrator.buildlabs.example/v1/orchestration/customer-dashboard/access#token=login.v1.signed",
       emailVerified: false,
       replyTo: "project+opaque@example.com",
     });
@@ -113,12 +113,12 @@ describe("customer orchestration email templates", () => {
       productionUrl: "https://mission-peak.fly.dev",
       proofSummary: "All declared hard checks passed.",
       proofSummaryUrl:
-        "https://orchestrator.buildlapse.example/v1/orchestration/proof-summaries/signed-capability",
+        "https://orchestrator.buildlabs.example/v1/orchestration/proof-summaries/signed-capability",
       replyTo: "project+opaque@example.com",
     });
     expect(final.text).toContain("https://mission-peak.fly.dev");
     expect(final.text).toContain(
-      "https://orchestrator.buildlapse.example/v1/orchestration/proof-summaries/signed-capability",
+      "https://orchestrator.buildlabs.example/v1/orchestration/proof-summaries/signed-capability",
     );
     expect(final.text).toMatch(/recorded proof summary/i);
     expect(final.text).toContain("production");

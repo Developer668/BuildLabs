@@ -28,9 +28,9 @@ import type { RunStore } from "../ports/index.js";
 export const AG_UI_MAX_INPUT_BYTES = 256 * 1_024;
 export const AG_UI_MAX_ACTIVE_STREAMS = 64;
 export const AG_UI_EVENT_PAGE_SIZE = 256;
-export const BUILD_RUN_ACTIVITY_TYPE = "buildlapse.candidate";
-export const BUILD_RUN_EVENT_NAME = "buildlapse.run_event";
-export const BUILD_RUN_KEEPALIVE_NAME = "buildlapse.keepalive";
+export const BUILD_RUN_ACTIVITY_TYPE = "buildlabs.candidate";
+export const BUILD_RUN_EVENT_NAME = "buildlabs.run_event";
+export const BUILD_RUN_KEEPALIVE_NAME = "buildlabs.keepalive";
 
 const MAX_MESSAGES = 100;
 const MAX_CONTEXT_ITEMS = 32;
@@ -57,7 +57,7 @@ export class AgUiInputError extends Error {
   }
 }
 
-export interface BuildlapseAgUiRunInput extends RunAgentInput {
+export interface BuildLabsAgUiRunInput extends RunAgentInput {
   forwardedProps: {
     buildRunId: string;
     afterSequence: number;
@@ -154,9 +154,9 @@ export interface BuildRunAgUiHandlerOptions {
   now?: () => number;
 }
 
-export function parseBuildlapseAgUiRunInput(
+export function parseBuildLabsAgUiRunInput(
   value: unknown,
-): BuildlapseAgUiRunInput {
+): BuildLabsAgUiRunInput {
   assertJsonSize(value);
   const record = requireRecord(value);
   const messages = requireArray(record, "messages");
@@ -225,7 +225,7 @@ export function parseBuildlapseAgUiRunInput(
 }
 
 export async function* streamBuildRunAsAgUi(
-  input: BuildlapseAgUiRunInput,
+  input: BuildLabsAgUiRunInput,
   store: RunStore,
   options: BuildRunAgUiStreamOptions = {},
 ): AsyncGenerator<AGUIEvent> {
@@ -359,9 +359,9 @@ export function createBuildRunAgUiHandler(
   options: BuildRunAgUiHandlerOptions,
 ): (request: FastifyRequest, reply: FastifyReply) => Promise<FastifyReply> {
   return async (request, reply) => {
-    let input: BuildlapseAgUiRunInput;
+    let input: BuildLabsAgUiRunInput;
     try {
-      input = parseBuildlapseAgUiRunInput(request.body);
+      input = parseBuildLabsAgUiRunInput(request.body);
     } catch (error) {
       if (error instanceof AgUiInputError) {
         return reply.code(400).send({
@@ -695,7 +695,7 @@ function applyProofProgressEvent(
   }
 }
 
-function runStartedEvent(input: BuildlapseAgUiRunInput): RunStartedEvent {
+function runStartedEvent(input: BuildLabsAgUiRunInput): RunStartedEvent {
   return {
     type: EventType.RUN_STARTED,
     threadId: input.threadId,
@@ -745,7 +745,7 @@ function activitySnapshotEvent(
 }
 
 function runFinishedEvent(
-  input: BuildlapseAgUiRunInput,
+  input: BuildLabsAgUiRunInput,
   run: BuildRun,
   cursor: number,
 ): RunFinishedEvent {
@@ -765,7 +765,7 @@ function runFinishedEvent(
 function internalRunErrorEvent(): RunErrorEvent {
   return {
     type: EventType.RUN_ERROR,
-    code: "buildlapse_ag_ui_internal_error",
+    code: "buildlabs_ag_ui_internal_error",
     message: "The build-run event stream failed",
   };
 }

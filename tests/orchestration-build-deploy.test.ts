@@ -35,7 +35,7 @@ import {
 } from "../src/orchestration/adapters/build/fly-cli-deployment.js";
 import { artifact, assignment } from "./fixtures.js";
 
-const TEST_FLY_ORGANIZATION = "buildlapse-production";
+const TEST_FLY_ORGANIZATION = "buildlabs-production";
 const TEST_FLY_REGION = "sjc";
 
 describe("orchestration build and deploy adapters", () => {
@@ -63,7 +63,7 @@ describe("orchestration build and deploy adapters", () => {
           braintrust: "healthy",
         },
         configuration: {
-          daytonaSnapshot: "buildlapse-dind-v1",
+          daytonaSnapshot: "buildlabs-dind-v1",
         },
       });
     });
@@ -71,7 +71,7 @@ describe("orchestration build and deploy adapters", () => {
     const adapter = new HttpBuildBackendAdapter({
       baseUrl: `${backend.url}/internal/`,
       bearerToken: "internal-token-with-sufficient-length",
-      expectedDaytonaSnapshot: "buildlapse-dind-v1",
+      expectedDaytonaSnapshot: "buildlabs-dind-v1",
     });
 
     await expect(adapter.health()).resolves.toBeUndefined();
@@ -347,7 +347,7 @@ describe("orchestration build and deploy adapters", () => {
 
   it("downloads, verifies, and safely extracts an exact proven artifact", async () => {
     const temporaryParent = await mkdtemp(
-      join(tmpdir(), "buildlapse-orchestration-test-"),
+      join(tmpdir(), "buildlabs-orchestration-test-"),
     );
     resources.push(() => rm(temporaryParent, { recursive: true, force: true }));
     const source = join(temporaryParent, "source");
@@ -405,7 +405,7 @@ describe("orchestration build and deploy adapters", () => {
 
   it("removes partial work when downloaded bytes fail the proven digest", async () => {
     const temporaryParent = await mkdtemp(
-      join(tmpdir(), "buildlapse-orchestration-integrity-"),
+      join(tmpdir(), "buildlabs-orchestration-integrity-"),
     );
     resources.push(() => rm(temporaryParent, { recursive: true, force: true }));
     const source = join(temporaryParent, "source");
@@ -443,7 +443,7 @@ describe("orchestration build and deploy adapters", () => {
 
   it("rejects link entries in an otherwise exact artifact archive", async () => {
     const temporaryParent = await mkdtemp(
-      join(tmpdir(), "buildlapse-orchestration-unsafe-tar-"),
+      join(tmpdir(), "buildlabs-orchestration-unsafe-tar-"),
     );
     resources.push(() => rm(temporaryParent, { recursive: true, force: true }));
     const source = join(temporaryParent, "source");
@@ -610,7 +610,7 @@ describe("orchestration build and deploy adapters", () => {
       accessToken: token,
       organizationSlug: TEST_FLY_ORGANIZATION,
       primaryRegion: TEST_FLY_REGION,
-      appNamePrefix: "buildlapse",
+      appNamePrefix: "buildlabs",
       spawnCommand: fakeSpawn.run,
       fetch: healthFetch,
       healthMaxAttempts: 3,
@@ -646,13 +646,13 @@ describe("orchestration build and deploy adapters", () => {
     });
     expect(receipt.productionUrl).toBe(`https://${receipt.appName}.fly.dev/`);
     expect(receipt.appName).toBe(
-      deriveFlyAppName("buildlapse", event.payload.projectId),
+      deriveFlyAppName("buildlabs", event.payload.projectId),
     );
     expect(healthRequests).toHaveLength(3);
     for (const request of healthRequests) {
       const url = new URL(request.url);
       expect(url.origin + url.pathname).toBe(receipt.productionUrl);
-      expect(url.searchParams.get("__buildlapse_release")).toBe(
+      expect(url.searchParams.get("__buildlabs_release")).toBe(
         receipt.releaseKey,
       );
       expect(request.machineId).toBe("machine-5");
@@ -673,7 +673,7 @@ describe("orchestration build and deploy adapters", () => {
       deployInvocation?.args.slice(strategyIndex, strategyIndex + 2),
     ).toEqual(["--strategy", "bluegreen"]);
     expect(deployInvocation?.args).toContain(
-      `io.buildlapse.release-key=${receipt.releaseKey}`,
+      `io.buildlabs.release-key=${receipt.releaseKey}`,
     );
     expect(deployInvocation?.args.join(" ")).not.toContain(token);
     expect(
@@ -707,7 +707,7 @@ describe("orchestration build and deploy adapters", () => {
         lstat(join(validated.directory, "fly.toml")),
       ).rejects.toMatchObject({ code: "ENOENT" });
       const organizationSlug = TEST_FLY_ORGANIZATION;
-      const appName = deriveFlyAppName("buildlapse", event.payload.projectId);
+      const appName = deriveFlyAppName("buildlabs", event.payload.projectId);
       const healthPath = '/ready?probe="fly"';
       let appExists = false;
       let deployed = false;
@@ -768,7 +768,7 @@ describe("orchestration build and deploy adapters", () => {
                 name: appName,
                 status: "pending",
                 organization: {
-                  name: "Buildlapse",
+                  name: "BuildLabs",
                   slug: organizationSlug,
                 },
               })
@@ -778,7 +778,7 @@ describe("orchestration build and deploy adapters", () => {
       const deployer = new FlyCliDeploymentAdapter({
         accessToken: "fly-org-token-never-log",
         organizationSlug,
-        appNamePrefix: "buildlapse",
+        appNamePrefix: "buildlabs",
         primaryRegion: TEST_FLY_REGION,
         healthPath,
         spawnCommand: fakeSpawn.run,
@@ -839,7 +839,7 @@ describe("orchestration build and deploy adapters", () => {
 
   it("recovers an existing app after an ambiguous machine-list preflight without trying to recreate it", async () => {
     const { event, validated } = await deploymentFixture(resources);
-    const appName = deriveFlyAppName("buildlapse", event.payload.projectId);
+    const appName = deriveFlyAppName("buildlabs", event.payload.projectId);
     let inspections = 0;
     const fakeSpawn = new FakeSpawn(() => {
       inspections += 1;
@@ -856,7 +856,7 @@ describe("orchestration build and deploy adapters", () => {
           name: appName,
           status: "deployed",
           organization: {
-            name: "Buildlapse",
+            name: "BuildLabs",
             slug: TEST_FLY_ORGANIZATION,
           },
         }),
@@ -888,7 +888,7 @@ describe("orchestration build and deploy adapters", () => {
 
   it("recovers when another worker wins the unique Fly app creation race", async () => {
     const { event, validated } = await deploymentFixture(resources);
-    const appName = deriveFlyAppName("buildlapse", event.payload.projectId);
+    const appName = deriveFlyAppName("buildlabs", event.payload.projectId);
     let appExists = false;
     let deployed = false;
     const fakeSpawn = new FakeSpawn((invocation) => {
@@ -916,7 +916,7 @@ describe("orchestration build and deploy adapters", () => {
               name: appName,
               status: "pending",
               organization: {
-                name: "Buildlapse",
+                name: "BuildLabs",
                 slug: TEST_FLY_ORGANIZATION,
               },
             })
@@ -991,7 +991,7 @@ describe("orchestration build and deploy adapters", () => {
 
   it("rejects a derived Fly app that resolves to a different organization", async () => {
     const { event, validated } = await deploymentFixture(resources);
-    const appName = deriveFlyAppName("buildlapse", event.payload.projectId);
+    const appName = deriveFlyAppName("buildlabs", event.payload.projectId);
     const fakeSpawn = new FakeSpawn(() => ({
       exitCode: 1,
       signal: null,
@@ -1388,7 +1388,7 @@ async function deploymentFixture(
   >;
 }> {
   const temporaryParent = await mkdtemp(
-    join(tmpdir(), "buildlapse-orchestration-fly-"),
+    join(tmpdir(), "buildlabs-orchestration-fly-"),
   );
   resources.push(() => rm(temporaryParent, { recursive: true, force: true }));
   const source = join(temporaryParent, "source");
@@ -1442,7 +1442,7 @@ function flyMachineListJson(
       instance_id: overrides.instanceId ?? "instance-5",
       state: overrides.state ?? "started",
       config: {
-        image: "registry.fly.io/buildlapse@sha256:provider-value",
+        image: "registry.fly.io/buildlabs@sha256:provider-value",
         metadata: {
           fly_release_id: overrides.releaseId ?? "release-5",
           fly_release_version: String(overrides.releaseVersion ?? 5),
@@ -1451,9 +1451,9 @@ function flyMachineListJson(
       image_ref: {
         digest: overrides.imageDigest ?? `sha256:${"d".repeat(64)}`,
         labels: {
-          "io.buildlapse.release-key":
+          "io.buildlabs.release-key":
             overrides.releaseKey ?? deriveFlyReleaseKey(event),
-          "io.buildlapse.artifact-sha256":
+          "io.buildlabs.artifact-sha256":
             overrides.artifactSha256 ?? event.payload.artifact.sha256,
         },
       },

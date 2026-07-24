@@ -73,7 +73,7 @@ Service URLs require HTTPS except for loopback build-backend development.
 Checkout return URLs always require HTTPS. Internal tokens and provider secrets
 are never included in responses or logs. The orchestrator and build backend use
 distinct internal bearer tokens: `BUILD_BACKEND_INTERNAL_TOKEN` must match the
-build service's `BUILDLAPSE_INTERNAL_TOKEN`, while
+build service's `BUILDLABS_INTERNAL_TOKEN`, while
 `ORCHESTRATION_INTERNAL_TOKEN` must be different.
 
 Production requires `STRIPE_EXPECTED_LIVEMODE=true` and a recognizable live
@@ -146,10 +146,10 @@ Within the same durable project transaction, it records the immutable SHA-256
 token-consumption receipt and passwordless ownership event. Replays and all
 invalid/mismatched forms receive the same generic 404. Success sets:
 
-- `buildlapse_dashboard_session`: seven-day signed project/email session,
+- `buildlabs_dashboard_session`: seven-day signed project/email session,
   `Secure`, `HttpOnly`, `SameSite=Strict`, scoped to
   `/v1/orchestration/customer-dashboard`;
-- `buildlapse_dashboard_csrf`: session-derived double-submit value, `Secure`,
+- `buildlabs_dashboard_csrf`: session-derived double-submit value, `Secure`,
   `SameSite=Strict`, scoped to `/`.
 
 When exchange returns a non-success response, the exchange page automatically
@@ -204,7 +204,7 @@ Dashboard steering uses:
 
 ```http
 POST /v1/orchestration/customer-dashboard/projects/:projectId/steering
-x-buildlapse-csrf: <matching CSRF cookie value>
+x-buildlabs-csrf: <matching CSRF cookie value>
 Idempotency-Key: <stable command key>
 Content-Type: application/json
 

@@ -137,7 +137,7 @@ export function customerDashboardLoginEmail(
 ): CustomerEmailDraft {
   const dashboardUrl = requireCustomerHttpsUrl(input.dashboardUrl);
   return emailDraft(
-    "Your Buildlapse dashboard sign-in link",
+    "Your BuildLabs dashboard sign-in link",
     [
       `Hi ${input.customerName ?? "there"},`,
       "",

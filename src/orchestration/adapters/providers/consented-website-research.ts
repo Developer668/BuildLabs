@@ -538,7 +538,7 @@ async function pinnedHttpsTransport(
           accept: "text/html, application/xhtml+xml, text/plain;q=0.9",
           "accept-encoding": "identity",
           connection: "close",
-          "user-agent": "BuildlapseResearch/1.0",
+          "user-agent": "BuildLabsResearch/1.0",
         },
         maxHeaderSize: 32 * 1_024,
         agent: false,

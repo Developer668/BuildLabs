@@ -41,7 +41,7 @@ if (!snapshot) {
       "apk add --no-cache bash build-base ca-certificates chromium coreutils curl findutils git grep jq nodejs npm openssh-client procps python3 py3-pip tar",
     )
     .runCommands(
-      "npm install --prefix /opt/buildlapse-render-inspector --omit=dev --ignore-scripts --no-audit --no-fund playwright-core@1.61.1",
+      "npm install --prefix /opt/buildlabs-render-inspector --omit=dev --ignore-scripts --no-audit --no-fund playwright-core@1.61.1",
     )
     .runCommands("git config --system init.defaultBranch main")
     .workdir("/home/daytona");
@@ -88,7 +88,7 @@ try {
       snapshot: snapshotName,
       language: "typescript",
       envVars: { CI: "true" },
-      labels: { "buildlapse.probe": "docker-runtime" },
+      labels: { "buildlabs.probe": "docker-runtime" },
       public: false,
       autoStopInterval: 10,
       autoArchiveInterval: 30,
@@ -131,7 +131,7 @@ try {
     "const observerStatus = document.querySelector('.observer-status');",
     "const markerObserver = new MutationObserver(() => {",
     "  const markerPresent = Array.from(document.querySelectorAll('*')).some((element) =>",
-    "    element.getAttributeNames().some((name) => name.startsWith('data-buildlapse-text-'))",
+    "    element.getAttributeNames().some((name) => name.startsWith('data-buildlabs-text-'))",
     "  );",
     "  markerReactive.style.backgroundColor = markerPresent ? 'white' : 'black';",
     "});",
@@ -158,7 +158,7 @@ try {
     "Element.prototype.checkVisibility = () => true;",
     "</script>",
   ].join("");
-  const browserFixturePath = "/tmp/buildlapse-render-probe.html";
+  const browserFixturePath = "/tmp/buildlabs-render-probe.html";
   await probe.fs.uploadFile(
     Buffer.from(hiddenTextHtml, "utf8"),
     browserFixturePath,
@@ -168,9 +168,9 @@ try {
       "tmp=$(mktemp -d)",
       `cp ${browserFixturePath} "$tmp/index.html"`,
       `printf '%s\\n' 'FROM alpine:3.22' 'RUN apk add --no-cache curl' 'CMD ["sh","-c","printf dind-ok"]' > "$tmp/Dockerfile"`,
-      'docker build -q -t buildlapse-dind-probe "$tmp" >/dev/null',
+      'docker build -q -t buildlabs-dind-probe "$tmp" >/dev/null',
       `printf '%s\\n' 'FROM alpine:3.22' 'RUN apk add --no-cache python3 && mkdir -p /www' 'COPY index.html /www/index.html' 'CMD ["python3","-m","http.server","4173","--bind","0.0.0.0","--directory","/www"]' > "$tmp/Dockerfile"`,
-      'docker build -q -t buildlapse-render-probe-image "$tmp" >/dev/null',
+      'docker build -q -t buildlabs-render-probe-image "$tmp" >/dev/null',
       'rm -rf "$tmp"',
     ].join(" && "),
     workDir,
@@ -185,17 +185,17 @@ try {
   const sealedDocker = await probe.process.executeCommand(
     [
       "set -euo pipefail",
-      "if docker run --rm --pull never --entrypoint curl buildlapse-dind-probe --silent --show-error --insecure --noproxy '*' --connect-timeout 3 --max-time 5 https://1.1.1.1/ >/dev/null 2>&1; then",
+      "if docker run --rm --pull never --entrypoint curl buildlabs-dind-probe --silent --show-error --insecure --noproxy '*' --connect-timeout 3 --max-time 5 https://1.1.1.1/ >/dev/null 2>&1; then",
       "  echo 'networkBlockAll allowed nested Docker egress' >&2",
       "  exit 91",
       "fi",
-      "if docker run --rm --pull never --entrypoint curl buildlapse-dind-probe --silent --show-error --insecure --noproxy '*' --connect-timeout 3 --max-time 5 https://registry.npmjs.org/ >/dev/null 2>&1; then",
+      "if docker run --rm --pull never --entrypoint curl buildlabs-dind-probe --silent --show-error --insecure --noproxy '*' --connect-timeout 3 --max-time 5 https://registry.npmjs.org/ >/dev/null 2>&1; then",
       "  echo 'networkBlockAll allowed nested Docker egress to registry.npmjs.org' >&2",
       "  exit 92",
       "fi",
-      'test "$(docker run --rm --pull never buildlapse-dind-probe)" = dind-ok',
-      "docker rm -f buildlapse-render-probe >/dev/null 2>&1 || true",
-      "docker run -d --name buildlapse-render-probe --pull never -p 127.0.0.1:4173:4173 buildlapse-render-probe-image >/dev/null",
+      'test "$(docker run --rm --pull never buildlabs-dind-probe)" = dind-ok',
+      "docker rm -f buildlabs-render-probe >/dev/null 2>&1 || true",
+      "docker run -d --name buildlabs-render-probe --pull never -p 127.0.0.1:4173:4173 buildlabs-render-probe-image >/dev/null",
     ].join("\n"),
     workDir,
     {},
@@ -221,8 +221,8 @@ try {
   if (browserReady.exitCode !== 0) {
     const diagnostics = await probe.process.executeCommand(
       [
-        "docker ps -a --filter name=buildlapse-render-probe --format '{{.Status}}'",
-        "docker logs --tail 20 buildlapse-render-probe 2>&1 || true",
+        "docker ps -a --filter name=buildlabs-render-probe --format '{{.Status}}'",
+        "docker logs --tail 20 buildlabs-render-probe 2>&1 || true",
       ].join("\n"),
       workDir,
       {},
