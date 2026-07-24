@@ -10,7 +10,7 @@
     "build": "vinext build",
     "start": "vinext start",
     "test": "tsc --noEmit && vinext build",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern outputs --ignore-pattern .vinext --ignore-pattern .wrangler",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {

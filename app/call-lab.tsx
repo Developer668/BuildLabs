@@ -123,16 +123,6 @@ export function CallLab() {
       .catch(() => undefined);
   }, []);
 
-  useEffect(() => {
-    if (!accessCode) return;
-    const initial = window.setTimeout(() => void loadCalls(), 0);
-    const interval = window.setInterval(() => void loadCalls(true), 7000);
-    return () => {
-      window.clearTimeout(initial);
-      window.clearInterval(interval);
-    };
-  }, [accessCode, loadCalls]);
-
   async function copyPhone() {
     if (!config.phoneHref) return;
     await navigator.clipboard.writeText(config.phoneDisplay).catch(() => undefined);
@@ -172,6 +162,9 @@ export function CallLab() {
         <input
           id="access-code"
           onChange={(event) => setAccessCode(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") void loadCalls();
+          }}
           placeholder="Access code"
           type="password"
           value={accessCode}

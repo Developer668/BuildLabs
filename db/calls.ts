@@ -114,7 +114,7 @@ function mapRow(row: CallRow): CallRecord {
   };
 }
 
-export async function listCalls(limit = 40) {
+export async function listCalls(limit = 100) {
   await ensureCallSchema();
   const result = await database()
     .prepare("SELECT * FROM call_sessions ORDER BY created_at DESC LIMIT ?")
