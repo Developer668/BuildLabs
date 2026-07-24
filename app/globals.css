@@ -1,0 +1,490 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f5f5f7;
+  --foreground: #181b25;
+  --surface: #ffffff;
+  --surface-subtle: #f0f1f4;
+  --border: #dfe2e8;
+  --muted: #6d7483;
+  --accent: #5266ed;
+  --danger: #c84c4c;
+  --success: #287564;
+  --warning: #a86b1d;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  background: var(--background);
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+summary:focus-visible {
+  outline: 3px solid rgba(82, 102, 237, 0.24);
+  outline-offset: 2px;
+}
+
+.page {
+  width: min(100% - 32px, 980px);
+  margin: 0 auto;
+  padding: 54px 0 80px;
+}
+
+.pageHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 32px;
+}
+
+.eyebrow {
+  margin: 0 0 7px;
+  color: var(--muted);
+  font-family: "Courier New", monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(32px, 5vw, 46px);
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+}
+
+.description {
+  max-width: 680px;
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.refreshButton,
+.phonePanel button {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--foreground);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.refreshButton:disabled,
+.phonePanel button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.phonePanel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-top: 30px;
+  padding: 20px 22px;
+  border: 1px solid #2b3243;
+  border-radius: 10px;
+  background: #171c2b;
+  color: white;
+}
+
+.phonePanel > div {
+  display: grid;
+  gap: 4px;
+}
+
+.phonePanel span,
+.readOnly {
+  color: #aeb4c2;
+  font-family: "Courier New", monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.phonePanel strong {
+  font-family: "Courier New", monospace;
+  font-size: clamp(22px, 4vw, 34px);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.phonePanel small {
+  color: #969dac;
+  font-size: 10px;
+}
+
+.phonePanel button {
+  flex: 0 0 auto;
+  border-color: #444c61;
+  background: #22283a;
+  color: white;
+}
+
+.accessRow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.accessRow label {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.accessRow input {
+  width: 220px;
+  height: 38px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.stats div {
+  display: flex;
+  min-height: 76px;
+  align-items: center;
+  gap: 12px;
+  padding: 15px 17px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.stats strong {
+  font-size: 23px;
+}
+
+.stats span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.panel {
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(18, 24, 40, 0.035);
+  overflow: hidden;
+}
+
+.panelHeader {
+  display: flex;
+  min-height: 64px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.panelHeader h2 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.panelHeader p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.readOnly {
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-subtle);
+  color: var(--muted);
+}
+
+.emptyState {
+  display: grid;
+  min-height: 240px;
+  place-content: center;
+  gap: 14px;
+  padding: 32px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.emptyState strong {
+  max-width: 500px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.emptyIcon {
+  width: 38px;
+  height: 38px;
+  margin: auto;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-subtle);
+  font-family: "Courier New", monospace;
+  line-height: 33px;
+}
+
+.call + .call {
+  border-top: 1px solid var(--border);
+}
+
+.call summary {
+  display: flex;
+  min-height: 82px;
+  align-items: center;
+  gap: 13px;
+  padding: 15px 18px;
+  list-style: none;
+  cursor: pointer;
+  transition: background 110ms ease;
+}
+
+.call summary::-webkit-details-marker {
+  display: none;
+}
+
+.call summary:hover {
+  background: #fafbfc;
+}
+
+.callIcon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+  color: var(--muted);
+}
+
+.callInfo {
+  min-width: 0;
+  flex: 1;
+}
+
+.callInfo > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.callInfo strong {
+  font-size: 12px;
+}
+
+.callInfo p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-family: "Courier New", monospace;
+  font-size: 9px;
+}
+
+.status {
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-subtle);
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.status.successful,
+.status.completed {
+  border-color: #bcd8ce;
+  background: #eef7f4;
+  color: var(--success);
+}
+
+.status.failed {
+  border-color: #e2b9b9;
+  background: #fff2f2;
+  color: var(--danger);
+}
+
+.status.in_progress,
+.status.dialing {
+  border-color: #e5cfad;
+  background: #fff8e8;
+  color: var(--warning);
+}
+
+.chevron {
+  color: var(--muted);
+  transition: transform 120ms ease;
+}
+
+.call[open] .chevron {
+  transform: rotate(180deg);
+}
+
+.callBody {
+  padding: 22px 24px 26px;
+  border-top: 1px solid var(--border);
+  background: #fafbfc;
+}
+
+.callSummary,
+.callError {
+  max-width: 760px;
+  margin: 0 auto 16px;
+  padding: 10px 12px;
+  border: 1px solid #d9e0f5;
+  border-radius: 8px;
+  background: #f3f5fc;
+  color: #3f496d;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.callError {
+  border-color: #e6c4c4;
+  background: #fff3f3;
+  color: #843d3d;
+}
+
+.turns {
+  display: grid;
+  max-width: 760px;
+  gap: 11px;
+  margin: 0 auto;
+}
+
+.turn {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.turn.agent {
+  justify-content: flex-end;
+}
+
+.turn > div {
+  max-width: 78%;
+  padding: 11px 13px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: white;
+}
+
+.turn.agent > div {
+  border-color: #d8dcf4;
+  background: #f4f5fb;
+}
+
+.turn span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.turn p {
+  margin: 0;
+  color: #333a46;
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.noTranscript {
+  margin: 0;
+  padding: 34px;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+@media (max-width: 620px) {
+  .page {
+    width: calc(100% - 22px);
+    padding-top: 30px;
+  }
+
+  .pageHeader {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .phonePanel {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .accessRow {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .accessRow input {
+    width: 100%;
+  }
+
+  .stats {
+    grid-template-columns: 1fr;
+  }
+
+  .stats div {
+    min-height: 58px;
+  }
+
+  .turn > div {
+    max-width: 92%;
+  }
+
+  .callBody {
+    padding-inline: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}
